@@ -155,4 +155,15 @@ class AdvancedDriveFeaturesTest extends TestCase
         $this->assertNotNull($uploadedEntry);
         $this->assertEquals(1, $fileRequest->fresh()->uploads_count);
     }
+
+    public function test_seo_sitemap_and_robots(): void
+    {
+        $sitemapResponse = $this->get('/sitemap.xml');
+        $sitemapResponse->assertOk();
+        $this->assertStringContainsString('application/xml', $sitemapResponse->headers->get('Content-Type'));
+        $this->assertStringContainsString('<urlset', $sitemapResponse->getContent());
+
+        $this->assertFileExists(public_path('robots.txt'));
+        $this->assertFileExists(public_path('site.webmanifest'));
+    }
 }

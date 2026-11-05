@@ -110,7 +110,11 @@ export default function ShareShow({
 
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 font-poppins text-slate-800">
-            <Head title={`Berbagi Berkas: ${fileName}`} />
+            <Head>
+                <title>{`Unduh & Pratinjau Berkas: ${fileName} - CloudVault`}</title>
+                <meta name="robots" content="noindex, nofollow" />
+                <meta name="description" content="Tautan berbagi berkas CloudVault terproteksi." />
+            </Head>
 
             {/* Brand Header */}
             <div className="mb-8">
@@ -120,7 +124,7 @@ export default function ShareShow({
             <div className="w-full max-w-lg bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-200/80 overflow-hidden">
                 {!isUnlocked ? (
                     /* PASSWORD PROMPT */
-                    <div className="p-8 text-center">
+                    <div className="p-5 sm:p-8 text-center">
                         <div className="w-14 h-14 rounded-2xl bg-[#FEF9EC] text-[#CC6F00] border border-[#F2A900]/30 flex items-center justify-center mx-auto mb-4 shadow-xs">
                             <Lock className="w-7 h-7" />
                         </div>
@@ -159,9 +163,9 @@ export default function ShareShow({
                     </div>
                 ) : (
                     /* FILE CARD */
-                    <div className="p-8 space-y-6">
+                    <div className="p-5 sm:p-8 space-y-6">
                         {/* Permission & Status Banner */}
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
                                 permission === 'editor'
                                     ? 'bg-amber-100 text-amber-900 border border-amber-300'

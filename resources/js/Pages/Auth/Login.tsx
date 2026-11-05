@@ -33,7 +33,13 @@ export default function Login({
 
     return (
         <GuestLayout>
-            <Head title="Masuk ke CloudVault" />
+            <Head>
+                <title>Masuk ke CloudVault - Cloud Storage Mandiri</title>
+                <meta
+                    name="description"
+                    content="Masuk ke akun CloudVault Anda untuk mengelola berkas, folder hirarkis, dan dokumen pribadi secara aman."
+                />
+            </Head>
 
             {/* Header Badge & Title */}
             <div className="mb-6 text-center">

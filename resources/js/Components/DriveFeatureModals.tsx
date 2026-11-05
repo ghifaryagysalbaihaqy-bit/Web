@@ -27,7 +27,12 @@ import {
     CheckCircle2,
     ArrowRight,
     FileText,
-    Folder as FolderIcon
+    Folder as FolderIcon,
+    MessageSquare,
+    Smartphone,
+    Send,
+    Terminal,
+    Link2
 } from 'lucide-react';
 import { FileItem, FolderItem, StorageInfo, FileRequestItem } from '@/types';
 
@@ -1254,4 +1259,401 @@ export function FileRequestModal({ isOpen, onClose, availableFolders }: FileRequ
         </div>
     );
 }
+
+// ==========================================
+// 8. WHATSAPP & EXTERNAL APPS INTEGRATION MODAL
+// ==========================================
+interface WhatsAppIntegrationModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    userToken?: string;
+    onTokenRegenerated?: (newToken: string) => void;
+}
+
+export function WhatsAppIntegrationModal({
+    isOpen,
+    onClose,
+    userToken: initialToken = '',
+    onTokenRegenerated,
+}: WhatsAppIntegrationModalProps) {
+    const [token, setToken] = useState(initialToken);
+    const [copiedUrl, setCopiedUrl] = useState(false);
+    const [copiedCurl, setCopiedCurl] = useState(false);
+    const [activeTab, setActiveTab] = useState<'test' | 'guide' | 'curl'>('test');
+    const [isRegenerating, setIsRegenerating] = useState(false);
+    const [isSendingTest, setIsSendingTest] = useState(false);
+
+    // Test form states
+    const [testSender, setTestSender] = useState('+62 812-3456-7890');
+    const [testCaption, setTestCaption] = useState('Foto dokumentasi & kuitansi belanja');
+    const [selectedImage, setSelectedImage] = useState<File | null>(null);
+    const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+    useEffect(() => {
+        if (initialToken) setToken(initialToken);
+    }, [initialToken]);
+
+    if (!isOpen) return null;
+
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const webhookUrl = `${origin}/api/v1/inbound/${token}`;
+
+    const curlSnippet = `curl -X POST "${webhookUrl}" \\
+  -F "file=@foto_struk.jpg" \\
+  -F "sender=6281234567890" \\
+  -F "caption=Foto kuitansi dari WhatsApp"`;
+
+    const handleCopy = (text: string, type: 'url' | 'curl') => {
+        navigator.clipboard.writeText(text);
+        if (type === 'url') {
+            setCopiedUrl(true);
+            setTimeout(() => setCopiedUrl(false), 2000);
+        } else {
+            setCopiedCurl(true);
+            setTimeout(() => setCopiedCurl(false), 2000);
+        }
+    };
+
+    const handleRegenerateToken = async () => {
+        if (!confirm('Apakah Anda yakin ingin memperbarui token integrasi? URL webhook lama tidak akan dapat menerima file lagi.')) {
+            return;
+        }
+
+        setIsRegenerating(true);
+        try {
+            const res = await axios.post('/integrations/regenerate-token');
+            if (res.data?.token) {
+                setToken(res.data.token);
+                if (onTokenRegenerated) onTokenRegenerated(res.data.token);
+            }
+        } catch (err) {
+            console.error('Gagal memperbarui token', err);
+        } finally {
+            setIsRegenerating(false);
+        }
+    };
+
+    const handleRunTest = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSendingTest(true);
+        setTestResult(null);
+
+        const formData = new FormData();
+        if (selectedImage) {
+            formData.append('image', selectedImage);
+        }
+        formData.append('sender', testSender);
+        formData.append('caption', testCaption);
+
+        try {
+            await axios.post('/integrations/simulate-upload', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+
+            setTestResult({
+                success: true,
+                message: 'Foto berhasil disimulasikan dari WhatsApp dan masuk ke folder "WhatsApp Media"!',
+            });
+
+            setTimeout(() => {
+                onClose();
+                router.visit('/drive', { preserveState: false });
+            }, 1400);
+        } catch (err: any) {
+            setTestResult({
+                success: false,
+                message: err.response?.data?.message || 'Gagal mengirim simulasi foto WhatsApp.',
+            });
+        } finally {
+            setIsSendingTest(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs animate-fade-in font-poppins">
+            <div className="w-full max-w-xl max-h-[90vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col overflow-hidden animate-scale-up">
+                {/* Header */}
+                <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 bg-gradient-to-r from-emerald-50/50 via-white to-amber-50/30 dark:from-emerald-950/20 dark:via-slate-900 dark:to-amber-950/20">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-[#25D366] text-white flex items-center justify-center shadow-md shadow-[#25D366]/30 shrink-0">
+                            <MessageSquare className="w-5 h-5 fill-white" />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
+                                    Integrasi WhatsApp & Aplikasi Luar
+                                </h3>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#25D366]/15 text-[#075E54] dark:text-[#25D366]">
+                                    Aktif
+                                </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                Simpan foto & berkas otomatis dari WhatsApp langsung ke CloudVault
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                {/* Content body */}
+                <div className="p-4 sm:p-6 overflow-y-auto space-y-5">
+                    {/* Webhook URL Card */}
+                    <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 space-y-3">
+                        <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                                <Link2 className="w-4 h-4 text-[#25D366]" />
+                                <span>URL Webhook Pribadi Anda</span>
+                            </label>
+                            <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                                <span>Folder:</span>
+                                <strong className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                                    WhatsApp Media
+                                </strong>
+                            </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="text"
+                                readOnly
+                                value={webhookUrl}
+                                className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 text-xs font-mono select-all focus:outline-none"
+                            />
+                            <button
+                                onClick={() => handleCopy(webhookUrl, 'url')}
+                                className="px-3.5 py-2 rounded-xl text-xs font-semibold text-white bg-[#25D366] hover:bg-[#1EBE5D] transition-colors flex items-center gap-1.5 shrink-0 shadow-xs"
+                                title="Salin Webhook URL"
+                            >
+                                {copiedUrl ? (
+                                    <>
+                                        <Check className="w-3.5 h-3.5" />
+                                        <span>Tersalin!</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Copy className="w-3.5 h-3.5" />
+                                        <span>Salin URL</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
+                            <span>Setiap foto yang dikirim ke URL ini otomatis masuk ke CloudVault Anda.</span>
+                            <button
+                                type="button"
+                                onClick={handleRegenerateToken}
+                                disabled={isRegenerating}
+                                className="text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1 font-medium disabled:opacity-50"
+                            >
+                                <RefreshCw className={`w-3 h-3 ${isRegenerating ? 'animate-spin' : ''}`} />
+                                <span>Perbarui Token</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Navigation Tabs */}
+                    <div className="flex items-center border-b border-slate-200 dark:border-slate-800 gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('test')}
+                            className={`pb-2.5 px-3 text-xs font-bold transition-all relative ${
+                                activeTab === 'test'
+                                    ? 'text-[#25D366] border-b-2 border-[#25D366]'
+                                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+                            }`}
+                        >
+                            Uji Coba Kirim Foto WA
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('guide')}
+                            className={`pb-2.5 px-3 text-xs font-bold transition-all relative ${
+                                activeTab === 'guide'
+                                    ? 'text-[#25D366] border-b-2 border-[#25D366]'
+                                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+                            }`}
+                        >
+                            Cara Sambungkan WhatsApp
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('curl')}
+                            className={`pb-2.5 px-3 text-xs font-bold transition-all relative ${
+                                activeTab === 'curl'
+                                    ? 'text-[#25D366] border-b-2 border-[#25D366]'
+                                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+                            }`}
+                        >
+                            API & Script cURL
+                        </button>
+                    </div>
+
+                    {/* TAB 1: LIVE TEST FORM */}
+                    {activeTab === 'test' && (
+                        <form onSubmit={handleRunTest} className="space-y-4">
+                            <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-900/40 text-xs text-emerald-900 dark:text-emerald-200 flex items-start gap-2.5">
+                                <Smartphone className="w-4 h-4 text-[#25D366] shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="font-semibold">Simulasikan Foto Masuk dari WhatsApp</p>
+                                    <p className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
+                                        Anda bisa langsung mengunggah foto uji coba atau membiarkan CloudVault membuat sampel foto tanda terima WhatsApp otomatis.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                                        Nomor Pengirim WhatsApp
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={testSender}
+                                        onChange={(e) => setTestSender(e.target.value)}
+                                        placeholder="+62 812-xxxx-xxxx"
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:border-[#25D366] focus:ring-1 focus:ring-[#25D366] outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                                        Pilih Foto (Opsional)
+                                    </label>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={(e) => setSelectedImage(e.target.files?.[0] || null)}
+                                        className="w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-100 dark:file:bg-slate-800 file:text-slate-700 dark:file:text-slate-200 hover:file:bg-slate-200 cursor-pointer"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                                    Keterangan / Caption Chat
+                                </label>
+                                <input
+                                    type="text"
+                                    value={testCaption}
+                                    onChange={(e) => setTestCaption(e.target.value)}
+                                    placeholder="Contoh: Bukti transfer pembayaran proyek"
+                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200 focus:border-[#25D366] focus:ring-1 focus:ring-[#25D366] outline-none"
+                                />
+                            </div>
+
+                            {testResult && (
+                                <div
+                                    className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                                        testResult.success
+                                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                            : 'bg-red-50 text-red-800 border border-red-200'
+                                    }`}
+                                >
+                                    {testResult.success ? (
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                    ) : (
+                                        <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                                    )}
+                                    <span>{testResult.message}</span>
+                                </div>
+                            )}
+
+                            <button
+                                type="submit"
+                                disabled={isSendingTest}
+                                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-[#25D366] hover:bg-[#1EBE5D] transition-all flex items-center justify-center gap-2 shadow-md shadow-[#25D366]/25 disabled:opacity-50"
+                            >
+                                <Send className={`w-4 h-4 ${isSendingTest ? 'animate-pulse' : ''}`} />
+                                <span>{isSendingTest ? 'Mengirim Foto ke CloudVault...' : 'Kirim Simulasi Foto WA Sekarang'}</span>
+                            </button>
+                        </form>
+                    )}
+
+                    {/* TAB 2: STEP BY STEP GUIDE */}
+                    {activeTab === 'guide' && (
+                        <div className="space-y-4 text-xs">
+                            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                                <h4 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                                    <span className="w-5 h-5 rounded-full bg-[#25D366] text-white flex items-center justify-center text-[10px]">1</span>
+                                    <span>Menggunakan WhatsApp Gateway (Fonnte, Wablas, UltraMsg)</span>
+                                </h4>
+                                <p className="text-slate-600 dark:text-slate-400 pl-7 text-[11px] leading-relaxed">
+                                    Buka pengaturan Webhook di dashboard provider WhatsApp Anda, lalu tempelkan <strong>URL Webhook Pribadi</strong> di atas. Setiap ada pengguna yang mengirim foto ke bot WhatsApp Anda, gateway akan meneruskannya dan CloudVault otomatis menyimpannya ke folder <strong>WhatsApp Media</strong>.
+                                </p>
+                            </div>
+
+                            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                                <h4 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                                    <span className="w-5 h-5 rounded-full bg-[#25D366] text-white flex items-center justify-center text-[10px]">2</span>
+                                    <span>Meta WhatsApp Cloud API (Developer Resmi)</span>
+                                </h4>
+                                <div className="text-slate-600 dark:text-slate-400 pl-7 text-[11px] space-y-1">
+                                    <p>• <strong>Callback URL:</strong> <code className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-mono text-[10px]">{webhookUrl}</code></p>
+                                    <p>• <strong>Verify Token:</strong> <code className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-mono text-[10px]">{token}</code></p>
+                                    <p>CloudVault mendukung proses verifikasi otomatis (hub.challenge) dari Meta.</p>
+                                </div>
+                            </div>
+
+                            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                                <h4 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                                    <span className="w-5 h-5 rounded-full bg-[#25D366] text-white flex items-center justify-center text-[10px]">3</span>
+                                    <span>Apple iOS Shortcuts / Android / Zapier / Make / n8n</span>
+                                </h4>
+                                <p className="text-slate-600 dark:text-slate-400 pl-7 text-[11px] leading-relaxed">
+                                    Buat pintasan di iPhone atau Android: saat Anda membagikan foto dari WhatsApp, pilih pintasan yang mengirim file dengan metode <code>POST</code> ke URL Webhook Anda.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* TAB 3: CURL & DEVELOPER API */}
+                    {activeTab === 'curl' && (
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                    <Terminal className="w-3.5 h-3.5 text-slate-500" />
+                                    <span>Contoh cURL Perintah Terminal:</span>
+                                </span>
+                                <button
+                                    onClick={() => handleCopy(curlSnippet, 'curl')}
+                                    className="text-xs font-semibold text-[#25D366] hover:underline flex items-center gap-1"
+                                >
+                                    {copiedCurl ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                    <span>{copiedCurl ? 'Tersalin' : 'Salin Perintah'}</span>
+                                </button>
+                            </div>
+
+                            <pre className="p-3.5 rounded-2xl bg-slate-900 text-slate-200 font-mono text-[11px] overflow-x-auto leading-relaxed border border-slate-800 select-all">
+                                {curlSnippet}
+                            </pre>
+
+                            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 text-[11px] text-slate-500 space-y-1">
+                                <p className="font-semibold text-slate-700 dark:text-slate-300">Format yang Didukung:</p>
+                                <p>• <strong>Multipart Form:</strong> field <code>file</code>, <code>image</code>, <code>photo</code>, atau <code>media</code>.</p>
+                                <p>• <strong>Direct URL (JSON):</strong> <code>{`{"url": "https://...", "caption": "..."}`}</code> (CloudVault akan mengunduh langsung dari link).</p>
+                                <p>• <strong>Base64 Data (JSON):</strong> <code>{`{"data": "data:image/jpeg;base64,...", "name": "foto.jpg"}`}</code>.</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end shrink-0 bg-slate-50/50 dark:bg-slate-900/50">
+                    <button
+                        onClick={onClose}
+                        className="px-5 py-2 rounded-xl text-xs font-semibold text-slate-900 bg-[#F2A900] hover:bg-[#E09800] transition-colors"
+                    >
+                        Selesai
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 

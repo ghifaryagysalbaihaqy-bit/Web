@@ -147,8 +147,8 @@ export default function AdminUsers({ auth, users, flash }: AdminUsersProps) {
                 )}
 
                 {/* Users Table */}
-                <div className="border border-slate-200/80 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900 shadow-xs">
-                    <table className="w-full text-left border-collapse">
+                <div className="border border-slate-200/80 dark:border-slate-800 rounded-2xl overflow-x-auto no-scrollbar bg-white dark:bg-slate-900 shadow-xs">
+                    <table className="w-full min-w-[640px] sm:min-w-full text-left border-collapse">
                         <thead>
                             <tr className="border-b border-slate-200/80 dark:border-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider bg-slate-50/70 dark:bg-slate-800/40">
                                 <th className="py-3.5 px-6">Pengguna</th>

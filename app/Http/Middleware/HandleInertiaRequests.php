@@ -32,7 +32,7 @@ class HandleInertiaRequests extends Middleware
         return [
             ...parent::share($request),
             'auth' => [
-                'user' => $request->user(),
+                'user' => $request->user() ? tap($request->user(), fn ($u) => $u->ensureWebhookToken()) : null,
             ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),

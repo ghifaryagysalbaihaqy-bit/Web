@@ -8,11 +8,24 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Str;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
+
+    /**
+     * Boot model events.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (User $user): void {
+            if (empty($user->webhook_token)) {
+                $user->webhook_token = 'cv_in_'.Str::random(32);
+            }
+        });
+    }
 
     /**
      * The attributes that are mass assignable.
@@ -25,6 +38,7 @@ class User extends Authenticatable
         'password',
         'storage_limit',
         'is_admin',
+        'webhook_token',
     ];
 
     /**
@@ -124,5 +138,29 @@ class User extends Authenticatable
         $limit = (int) ($this->storage_limit ?: 5368709120);
 
         return max(0, $limit - $this->usedStorage());
+    }
+
+    /**
+     * Ensure the user has an active webhook integration token.
+     */
+    public function ensureWebhookToken(): string
+    {
+        if (empty($this->webhook_token)) {
+            $this->webhook_token = 'cv_in_'.Str::random(32);
+            $this->saveQuietly();
+        }
+
+        return $this->webhook_token;
+    }
+
+    /**
+     * Regenerate the webhook integration token.
+     */
+    public function regenerateWebhookToken(): string
+    {
+        $this->webhook_token = 'cv_in_'.Str::random(32);
+        $this->save();
+
+        return $this->webhook_token;
     }
 }

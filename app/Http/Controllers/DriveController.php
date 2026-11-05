@@ -343,6 +343,49 @@ class DriveController extends Controller
                 ];
             });
 
+        $mapQuickAccess = function (FileEntry $file): array {
+            return [
+                'id' => $file->id,
+                'name' => $file->name,
+                'path' => $file->path,
+                'mime_type' => $file->mime_type,
+                'extension' => $file->extension,
+                'size' => $file->size,
+                'formatted_size' => $file->formatted_size,
+                'is_starred' => (bool) $file->is_starred,
+                'is_locked' => (bool) $file->is_locked,
+                'tags' => $file->tags ?? [],
+                'has_active_share' => $file->hasActiveShare(),
+                'folder_id' => $file->folder_id,
+                'folder_name' => $file->folder?->name ?? 'My Drive',
+                'is_image' => $file->isImage(),
+                'is_pdf' => $file->isPdf(),
+                'is_audio' => $file->isAudio(),
+                'is_video' => $file->isVideo(),
+                'is_text' => $file->isText(),
+                'created_at' => $file->created_at?->format('d M Y, H:i') ?? '',
+                'updated_at' => $file->updated_at ? $file->updated_at->diffForHumans() : ($file->created_at?->format('d M Y') ?? ''),
+            ];
+        };
+
+        $quickAccess = [
+            'recent' => FileEntry::where('user_id', $user->id)
+                ->whereNull('deleted_at')
+                ->with('folder:id,name', 'shareLinks')
+                ->latest('updated_at')
+                ->limit(6)
+                ->get()
+                ->map($mapQuickAccess),
+            'starred' => FileEntry::where('user_id', $user->id)
+                ->where('is_starred', true)
+                ->whereNull('deleted_at')
+                ->with('folder:id,name', 'shareLinks')
+                ->latest('updated_at')
+                ->limit(6)
+                ->get()
+                ->map($mapQuickAccess),
+        ];
+
         return Inertia::render('Drive/Index', [
             'section' => $section,
             'currentFolder' => $currentFolder ? [
@@ -355,11 +398,12 @@ class DriveController extends Controller
             'breadcrumbs' => $breadcrumbs,
             'folders' => $folders,
             'files' => $files,
+            'quickAccess' => $quickAccess,
             'availableFolders' => $availableFolders,
             'allTags' => $allTags,
             'search' => $search ?? '',
             'advancedSearch' => [
-                'search_type' => $searchType,
+                'search_type' => ($searchType !== 'all') ? $searchType : '',
                 'size_range' => $sizeRange ?? '',
                 'date_range' => $dateRange ?? '',
                 'tag' => $tagFilter ?? '',
@@ -813,7 +857,8 @@ class DriveController extends Controller
             $files = FileEntry::where('user_id', $user->id)->whereIn('id', $fileIds)->get();
             foreach ($files as $file) {
                 if (Storage::disk('local')->exists($file->path)) {
-                    $zip->addFromString($file->name, Storage::disk('local')->get($file->path));
+                    $safeFileName = FileEntry::sanitizeFileName($file->name);
+                    $zip->addFromString($safeFileName, Storage::disk('local')->get($file->path));
                 }
             }
         }
@@ -821,7 +866,8 @@ class DriveController extends Controller
         if (! empty($folderIds)) {
             $folders = Folder::where('user_id', $user->id)->whereIn('id', $folderIds)->get();
             foreach ($folders as $folder) {
-                $this->addFolderToZip($zip, $folder, $folder->name);
+                $safeFolderName = FileEntry::sanitizeFileName($folder->name);
+                $this->addFolderToZip($zip, $folder, $safeFolderName);
             }
         }
 
@@ -848,10 +894,11 @@ class DriveController extends Controller
             abort(500, 'Gagal membuat file arsip zip.');
         }
 
-        $this->addFolderToZip($zip, $folder, $folder->name);
+        $safeFolderName = FileEntry::sanitizeFileName($folder->name);
+        $this->addFolderToZip($zip, $folder, $safeFolderName);
         $zip->close();
 
-        return response()->download($zipFileName, $folder->name.'.zip')->deleteFileAfterSend(true);
+        return response()->download($zipFileName, $safeFolderName.'.zip')->deleteFileAfterSend(true);
     }
 
     /**
@@ -859,19 +906,22 @@ class DriveController extends Controller
      */
     private function addFolderToZip(ZipArchive $zip, Folder $folder, string $currentPath): void
     {
-        $zip->addEmptyDir($currentPath);
+        $safePath = str_replace(['..', "\0"], '', $currentPath);
+        $zip->addEmptyDir($safePath);
 
         $files = FileEntry::where('folder_id', $folder->id)->get();
         foreach ($files as $file) {
             if (Storage::disk('local')->exists($file->path)) {
                 $fileContent = Storage::disk('local')->get($file->path);
-                $zip->addFromString($currentPath.'/'.$file->name, $fileContent);
+                $safeFileName = FileEntry::sanitizeFileName($file->name);
+                $zip->addFromString($safePath.'/'.$safeFileName, $fileContent);
             }
         }
 
         $subfolders = Folder::where('parent_id', $folder->id)->get();
         foreach ($subfolders as $sub) {
-            $this->addFolderToZip($zip, $sub, $currentPath.'/'.$sub->name);
+            $safeSubName = FileEntry::sanitizeFileName($sub->name);
+            $this->addFolderToZip($zip, $sub, $safePath.'/'.$safeSubName);
         }
     }
 

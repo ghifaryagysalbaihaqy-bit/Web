@@ -83,18 +83,29 @@ class FileVersionController extends Controller
         ]);
 
         $uploadedFile = $request->file('file');
+        $ext = strtolower($uploadedFile->getClientOriginalExtension() ?: (string) pathinfo($uploadedFile->getClientOriginalName(), PATHINFO_EXTENSION));
+
+        if (FileEntry::isDangerousExtension($ext)) {
+            if ($request->expectsJson()) {
+                return response()->json(['error' => "Format berkas '.{$ext}' dilarang demi keamanan server."], 422);
+            }
+
+            return back()->with('error', "Format berkas '.{$ext}' dilarang demi keamanan server.");
+        }
+
         $user = $request->user();
 
-        // Check storage capacity
+        // Check storage capacity (no arbitrary cap; bounded strictly by remaining storage capacity)
         $usedStorage = $user->usedStorage();
         $storageLimit = (int) ($user->storage_limit ?: 5368709120);
         $newSize = $uploadedFile->getSize();
         if ($usedStorage + $newSize > $storageLimit) {
+            $remainingFormatted = FileEntry::formatBytes(max(0, $storageLimit - $usedStorage));
             if ($request->expectsJson()) {
-                return response()->json(['message' => 'Kapasitas penyimpanan tidak mencukupi.'], 422);
+                return response()->json(['message' => "Kapasitas penyimpanan tidak mencukupi. Sisa kuota Anda adalah {$remainingFormatted}."], 422);
             }
 
-            return back()->with('error', 'Kapasitas penyimpanan tidak mencukupi.');
+            return back()->with('error', "Kapasitas penyimpanan tidak mencukupi. Sisa kuota Anda adalah {$remainingFormatted}.");
         }
 
         // Initialize v1 if none exists
@@ -256,7 +267,7 @@ class FileVersionController extends Controller
             abort(404, 'Berkas fisik versi ini tidak ditemukan.');
         }
 
-        $downloadName = "v{$version->version_number}_{$file->name}";
+        $downloadName = FileEntry::sanitizeFileName("v{$version->version_number}_{$file->name}");
 
         return Storage::disk('local')->download($version->path, $downloadName);
     }

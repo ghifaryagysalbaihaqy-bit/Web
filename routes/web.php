@@ -6,6 +6,7 @@ use App\Http\Controllers\DriveController;
 use App\Http\Controllers\FileController;
 use App\Http\Controllers\FileRequestController;
 use App\Http\Controllers\FileVersionController;
+use App\Http\Controllers\IntegrationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ShareController;
 use Illuminate\Foundation\Application;
@@ -84,6 +85,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/activity-logs', [ActivityLogController::class, 'index'])->name('activity-logs.index');
     Route::delete('/activity-logs', [ActivityLogController::class, 'clear'])->name('activity-logs.clear');
 
+    // App & WhatsApp Integrations
+    Route::get('/integrations/info', [IntegrationController::class, 'getInfo'])->name('integrations.info');
+    Route::post('/integrations/regenerate-token', [IntegrationController::class, 'regenerateToken'])->name('integrations.regenerate');
+    Route::post('/integrations/simulate-upload', [IntegrationController::class, 'simulateWhatsAppUpload'])->name('integrations.simulate-upload');
+
     // Profile
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
@@ -100,13 +106,24 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
 
 // Public Share Routes
 Route::get('/s/{token}', [ShareController::class, 'show'])->name('share.show');
-Route::post('/s/{token}/unlock', [ShareController::class, 'unlock'])->name('share.unlock');
+Route::post('/s/{token}/unlock', [ShareController::class, 'unlock'])->name('share.unlock')->middleware('throttle:6,1');
 Route::get('/s/{token}/download', [ShareController::class, 'download'])->name('share.download');
 Route::get('/s/{token}/preview', [ShareController::class, 'preview'])->name('share.preview');
-Route::post('/s/{token}/upload', [ShareController::class, 'uploadVersion'])->name('share.upload-version');
+Route::post('/s/{token}/upload', [ShareController::class, 'uploadVersion'])->name('share.upload-version')->middleware('throttle:20,1');
 
 // Public File Request Routes
 Route::get('/r/{token}', [FileRequestController::class, 'showPublic'])->name('file-requests.show');
-Route::post('/r/{token}/upload', [FileRequestController::class, 'uploadPublic'])->name('file-requests.upload');
+Route::post('/r/{token}/upload', [FileRequestController::class, 'uploadPublic'])->name('file-requests.upload')->middleware('throttle:20,1');
+
+// XML Sitemap for Search Engines
+Route::get('/sitemap.xml', function () {
+    $xml = '<?xml version="1.0" encoding="UTF-8"?>';
+    $xml .= '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
+    $xml .= '<url><loc>'.url('/').'</loc><lastmod>'.now()->toAtomString().'</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>';
+    $xml .= '<url><loc>'.url('/login').'</loc><lastmod>'.now()->toAtomString().'</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>';
+    $xml .= '</urlset>';
+
+    return response($xml, 200, ['Content-Type' => 'application/xml']);
+})->name('sitemap');
 
 require __DIR__.'/auth.php';

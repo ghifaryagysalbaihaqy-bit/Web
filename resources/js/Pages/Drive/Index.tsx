@@ -17,6 +17,8 @@ import {
     Edit2,
     FolderInput,
     ChevronRight,
+    ChevronDown,
+    Zap,
     CheckCircle,
     AlertCircle,
     X,
@@ -45,7 +47,8 @@ import {
     Palette,
     Files,
     PieChart,
-    FileUp
+    FileUp,
+    MessageSquare
 } from 'lucide-react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { PageProps, FolderItem, FileItem, Breadcrumb, StorageInfo } from '@/types';
@@ -68,6 +71,7 @@ import {
     DuplicateDetectionModal,
     DownloadManagerModal,
     FileRequestModal,
+    WhatsAppIntegrationModal,
     DownloadItem
 } from '@/Components/DriveFeatureModals';
 
@@ -77,6 +81,10 @@ interface DriveIndexProps extends PageProps {
     breadcrumbs: Breadcrumb[];
     folders: FolderItem[];
     files: FileItem[];
+    quickAccess?: {
+        recent: FileItem[];
+        starred: FileItem[];
+    };
     availableFolders: { id: number; name: string }[];
     search: string;
     filter?: string;
@@ -108,6 +116,7 @@ export default function DriveIndex({
     breadcrumbs,
     folders,
     files,
+    quickAccess,
     availableFolders,
     search: initialSearch,
     filter: initialFilter = 'all',
@@ -133,6 +142,10 @@ export default function DriveIndex({
     useEffect(() => {
         setActiveFilter(initialFilter);
     }, [initialFilter]);
+
+    const [quickAccessTab, setQuickAccessTab] = useState<'recent' | 'starred'>('recent');
+    const [isQuickAccessCollapsed, setIsQuickAccessCollapsed] = useState(false);
+
     const [isDragging, setIsDragging] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
@@ -258,7 +271,9 @@ export default function DriveIndex({
     const [isStorageAnalyticsOpen, setIsStorageAnalyticsOpen] = useState(false);
     const [isDuplicatesOpen, setIsDuplicatesOpen] = useState(false);
     const [isFileRequestOpen, setIsFileRequestOpen] = useState(false);
+    const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
     const [isDownloadManagerOpen, setIsDownloadManagerOpen] = useState(false);
+    const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
     // Download history tracker
     const [downloads, setDownloads] = useState<DownloadItem[]>(() => {
@@ -298,7 +313,7 @@ export default function DriveIndex({
     };
 
     const hasActiveAdvancedFilter = Boolean(
-        advancedSearch?.search_type ||
+        (advancedSearch?.search_type && advancedSearch.search_type !== 'all') ||
         advancedSearch?.size_range ||
         advancedSearch?.date_range ||
         advancedSearch?.tag
@@ -438,6 +453,17 @@ export default function DriveIndex({
         const filesArray = Array.from(fileList);
         const count = filesArray.length;
         const totalBytes = filesArray.reduce((acc, f) => acc + f.size, 0);
+
+        // Validasi kapasitas penyimpanan pengguna secara dinamis
+        const remainingBytes = Math.max(0, (storage.limit || 5368709120) - storage.used);
+        if (totalBytes > remainingBytes) {
+            setUploadError(`Ukuran total berkas (${formatBytes(totalBytes)}) melebihi sisa kapasitas akun Anda (${formatBytes(remainingBytes)}).`);
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+            return;
+        }
+
         const displayName = count === 1 ? filesArray[0].name : `${count} berkas`;
 
         setUploadFileDetails({
@@ -513,10 +539,13 @@ export default function DriveIndex({
             }
 
             let msg = 'Gagal mengunggah berkas. Silakan coba kembali.';
-            if (error.response?.data?.errors?.files) {
-                msg = Array.isArray(error.response.data.errors.files)
-                    ? error.response.data.errors.files[0]
-                    : error.response.data.errors.files;
+            if (error.response?.status === 413) {
+                msg = 'Ukuran berkas terlalu besar dan melampaui konfigurasi batas server (HTTP 413).';
+            } else if (error.response?.data?.errors) {
+                const firstErr = Object.values(error.response.data.errors).flat()[0];
+                if (typeof firstErr === 'string') {
+                    msg = firstErr;
+                }
             } else if (error.response?.data?.message) {
                 msg = error.response.data.message;
             }
@@ -810,15 +839,14 @@ export default function DriveIndex({
             header={
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 font-poppins">
                     {/* Breadcrumbs */}
-                    <nav className="flex items-center gap-1.5 text-xs font-medium overflow-x-auto py-1">
+                    <nav className="flex items-center gap-1.5 text-xs font-medium overflow-x-auto py-1 max-w-full no-scrollbar">
                         <Link
                             href={route('drive.index', { section: 'all' })}
                             preserveState
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all ${
-                                !currentFolder && section === 'all'
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all ${!currentFolder && section === 'all'
                                     ? 'bg-[#FEF9EC] dark:bg-amber-950/40 text-[#9A5B00] dark:text-[#F9E6A8] font-semibold border border-[#F2A900]/30'
                                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800'
-                            }`}
+                                }`}
                         >
                             <HardDrive className="w-4 h-4 text-[#CC6F00]" />
                             <span>My Drive</span>
@@ -831,11 +859,10 @@ export default function DriveIndex({
                                     <Link
                                         href={route('drive.index', { section: 'all', folder_id: crumb.id })}
                                         preserveState
-                                        className={`px-3 py-1.5 rounded-xl transition-all truncate max-w-[160px] ${
-                                            currentFolder?.id === crumb.id
+                                        className={`px-3 py-1.5 rounded-xl transition-all truncate max-w-[160px] ${currentFolder?.id === crumb.id
                                                 ? 'bg-[#FEF9EC] dark:bg-amber-950/40 text-[#9A5B00] dark:text-[#F9E6A8] font-semibold border border-[#F2A900]/30'
                                                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                        }`}
+                                            }`}
                                     >
                                         {crumb.name}
                                     </Link>
@@ -852,8 +879,30 @@ export default function DriveIndex({
                         )}
                     </nav>
 
-                    {/* Controls & Search */}
-                    <div className="flex items-center gap-2.5">
+                    {/* Controls, Actions & Search */}
+                    <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap justify-between sm:justify-end">
+                        {/* Primary Upload & New Folder Action Buttons (Moved from Sidebar) */}
+                        {section !== 'trash' && (
+                            <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-bold text-xs text-slate-900 bg-[#F2A900] hover:bg-[#CC6F00] hover:text-white shadow-xs hover:shadow-sm transition-all active:scale-98 shrink-0"
+                                >
+                                    <Upload className="w-3.5 h-3.5" />
+                                    <span>Upload Berkas</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsNewFolderOpen(true)}
+                                    className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors shadow-2xs active:scale-98 shrink-0"
+                                    title="Buat Folder Baru"
+                                >
+                                    <FolderPlus className="w-4 h-4 text-[#CC6F00]" />
+                                </button>
+                            </div>
+                        )}
+
                         <form onSubmit={handleSearch} className="relative flex-1 sm:w-64">
                             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                             <input
@@ -881,11 +930,10 @@ export default function DriveIndex({
                         <button
                             type="button"
                             onClick={() => setIsAdvancedSearchOpen(true)}
-                            className={`p-2 rounded-xl border transition-all ${
-                                hasActiveAdvancedFilter
+                            className={`p-2 rounded-xl border transition-all ${hasActiveAdvancedFilter
                                     ? 'bg-[#FEF9EC] border-[#F2A900] text-[#CC6F00] font-bold shadow-2xs'
                                     : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-500 hover:text-slate-800 hover:bg-slate-50'
-                            }`}
+                                }`}
                             title="Pencarian Tingkat Lanjut (Advanced Search: tipe, ukuran, tanggal, tag)"
                         >
                             <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -910,22 +958,20 @@ export default function DriveIndex({
                         <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-xl p-1 bg-white dark:bg-slate-800 shadow-2xs">
                             <button
                                 onClick={() => handleSetViewMode('grid')}
-                                className={`p-1.5 rounded-lg transition-all ${
-                                    viewMode === 'grid'
+                                className={`p-1.5 rounded-lg transition-all ${viewMode === 'grid'
                                         ? 'bg-[#FEF9EC] text-[#9A5B00] font-bold shadow-2xs'
                                         : 'text-slate-400 hover:text-slate-700'
-                                }`}
+                                    }`}
                                 title="Tampilan Grid"
                             >
                                 <Grid className="w-3.5 h-3.5" />
                             </button>
                             <button
                                 onClick={() => handleSetViewMode('list')}
-                                className={`p-1.5 rounded-lg transition-all ${
-                                    viewMode === 'list'
+                                className={`p-1.5 rounded-lg transition-all ${viewMode === 'list'
                                         ? 'bg-[#FEF9EC] text-[#9A5B00] font-bold shadow-2xs'
                                         : 'text-slate-400 hover:text-slate-700'
-                                }`}
+                                    }`}
                                 title="Tampilan List"
                             >
                                 <List className="w-3.5 h-3.5" />
@@ -935,7 +981,10 @@ export default function DriveIndex({
                 </div>
             }
         >
-            <Head title="Cloud Drive - CloudVault" />
+            <Head>
+                <title>Cloud Drive - CloudVault</title>
+                <meta name="robots" content="noindex, nofollow" />
+            </Head>
 
             {/* FLOATING TOP NOTIFICATION TOAST (Disappears after 5s, drops from top) */}
             {toast && (
@@ -946,31 +995,29 @@ export default function DriveIndex({
                     className="fixed top-5 left-1/2 z-50 w-[94%] max-w-xl -translate-x-1/2 animate-toast-in font-poppins pointer-events-auto"
                 >
                     <div
-                        className={`relative overflow-hidden rounded-2xl border p-4 shadow-2xl backdrop-blur-md flex items-center justify-between gap-3 ${
-                            toast.action_type === 'trash' || toast.action_type === 'delete'
+                        className={`relative overflow-hidden rounded-2xl border p-4 shadow-2xl backdrop-blur-md flex items-center justify-between gap-3 ${toast.action_type === 'trash' || toast.action_type === 'delete'
                                 ? 'bg-red-50/95 dark:bg-red-950/95 border-red-200/90 dark:border-red-900/80 text-red-900 dark:text-red-200'
                                 : toast.action_type === 'restore'
-                                ? 'bg-blue-50/95 dark:bg-blue-950/95 border-blue-200/90 dark:border-blue-900/80 text-blue-900 dark:text-blue-200'
-                                : toast.type === 'info'
-                                ? 'bg-amber-50/95 dark:bg-amber-950/95 border-amber-200/90 dark:border-amber-900/80 text-amber-900 dark:text-amber-200'
-                                : toast.type === 'error'
-                                ? 'bg-red-50/95 dark:bg-red-950/95 border-red-200/90 dark:border-red-900/80 text-red-900 dark:text-red-200'
-                                : 'bg-emerald-50/95 dark:bg-emerald-950/95 border-emerald-200/90 dark:border-emerald-900/80 text-emerald-900 dark:text-emerald-200'
-                        }`}
+                                    ? 'bg-blue-50/95 dark:bg-blue-950/95 border-blue-200/90 dark:border-blue-900/80 text-blue-900 dark:text-blue-200'
+                                    : toast.type === 'info'
+                                        ? 'bg-amber-50/95 dark:bg-amber-950/95 border-amber-200/90 dark:border-amber-900/80 text-amber-900 dark:text-amber-200'
+                                        : toast.type === 'error'
+                                            ? 'bg-red-50/95 dark:bg-red-950/95 border-red-200/90 dark:border-red-900/80 text-red-900 dark:text-red-200'
+                                            : 'bg-emerald-50/95 dark:bg-emerald-950/95 border-emerald-200/90 dark:border-emerald-900/80 text-emerald-900 dark:text-emerald-200'
+                            }`}
                     >
                         <div className="flex items-center gap-3 min-w-0">
                             <div
-                                className={`p-2 rounded-xl shrink-0 ${
-                                    toast.action_type === 'trash' || toast.action_type === 'delete'
+                                className={`p-2 rounded-xl shrink-0 ${toast.action_type === 'trash' || toast.action_type === 'delete'
                                         ? 'bg-red-100 dark:bg-red-900/60 text-red-600 dark:text-red-300'
                                         : toast.action_type === 'restore'
-                                        ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300'
-                                        : toast.type === 'info'
-                                        ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
-                                        : toast.type === 'error'
-                                        ? 'bg-red-100 dark:bg-red-900/60 text-red-600 dark:text-red-300'
-                                        : 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-300'
-                                }`}
+                                            ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300'
+                                            : toast.type === 'info'
+                                                ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300'
+                                                : toast.type === 'error'
+                                                    ? 'bg-red-100 dark:bg-red-900/60 text-red-600 dark:text-red-300'
+                                                    : 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-300'
+                                    }`}
                             >
                                 {toast.action_type === 'trash' || toast.action_type === 'delete' ? (
                                     <Trash2 className="w-4 h-4" />
@@ -996,10 +1043,10 @@ export default function DriveIndex({
                                             {toast.action_type === 'trash' || toast.action_type === 'delete'
                                                 ? `Waktu Terhapus: ${toast.timestamp}`
                                                 : toast.action_type === 'restore'
-                                                ? `Waktu Dipulihkan: ${toast.timestamp}`
-                                                : toast.action_type === 'upload'
-                                                ? `Selesai Diunggah: ${toast.timestamp}`
-                                                : `Waktu Selesai: ${toast.timestamp}`}
+                                                    ? `Waktu Dipulihkan: ${toast.timestamp}`
+                                                    : toast.action_type === 'upload'
+                                                        ? `Selesai Diunggah: ${toast.timestamp}`
+                                                        : `Waktu Selesai: ${toast.timestamp}`}
                                         </span>
                                     </p>
                                 )}
@@ -1018,17 +1065,16 @@ export default function DriveIndex({
                         {/* 5-second animated progress timer bar at bottom edge */}
                         <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/5 dark:bg-white/5 overflow-hidden">
                             <div
-                                className={`h-full animate-toast-progress ${
-                                    toast.action_type === 'trash' || toast.action_type === 'delete'
+                                className={`h-full animate-toast-progress ${toast.action_type === 'trash' || toast.action_type === 'delete'
                                         ? 'bg-red-500'
                                         : toast.action_type === 'restore'
-                                        ? 'bg-blue-500'
-                                        : toast.type === 'info'
-                                        ? 'bg-amber-500'
-                                        : toast.type === 'error'
-                                        ? 'bg-red-500'
-                                        : 'bg-emerald-500'
-                                }`}
+                                            ? 'bg-blue-500'
+                                            : toast.type === 'info'
+                                                ? 'bg-amber-500'
+                                                : toast.type === 'error'
+                                                    ? 'bg-red-500'
+                                                    : 'bg-emerald-500'
+                                    }`}
                             />
                         </div>
                     </div>
@@ -1040,6 +1086,10 @@ export default function DriveIndex({
                 type="file"
                 ref={fileInputRef}
                 onChange={handleFileInputChange}
+                onClick={(e) => {
+                    (e.target as HTMLInputElement).value = '';
+                }}
+                multiple
                 className="hidden"
             />
 
@@ -1058,39 +1108,44 @@ export default function DriveIndex({
                     </div>
                 )}
 
-                {/* SIDEBAR NAVIGATION */}
-                <aside className="w-full md:w-60 p-4 border-r border-slate-200/80 dark:border-slate-800 flex flex-col justify-between shrink-0 bg-white/75 backdrop-blur-xs dark:bg-slate-900/50">
-                    <div className="space-y-5">
-                        {/* New Actions */}
-                        {section !== 'trash' && (
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => fileInputRef.current?.click()}
-                                    className="flex-1 flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl font-semibold text-xs text-slate-900 bg-[#F2A900] hover:bg-[#CC6F00] hover:text-white shadow-xs hover:shadow-sm transition-all"
-                                >
-                                    <Upload className="w-4 h-4" />
-                                    <span>Upload Berkas</span>
-                                </button>
-                                <button
-                                    onClick={() => setIsNewFolderOpen(true)}
-                                    className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors"
-                                    title="Buat Folder Baru"
-                                >
-                                    <FolderPlus className="w-4 h-4 text-[#CC6F00]" />
-                                </button>
-                            </div>
-                        )}
+                {/* SIDEBAR NAVIGATION (Desktop Column + Mobile Slide-over Drawer) */}
+                {isMobileSidebarOpen && (
+                    <div
+                        className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs md:hidden animate-fade-in"
+                        onClick={() => setIsMobileSidebarOpen(false)}
+                    />
+                )}
 
+                <aside
+                    className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] p-4 bg-white dark:bg-slate-900 shadow-2xl flex flex-col justify-between overflow-y-auto transition-transform duration-300 md:static md:z-auto md:w-60 md:shadow-none md:border-r md:border-slate-200/80 md:bg-white/75 md:backdrop-blur-xs md:dark:bg-slate-900/50 md:translate-x-0 ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+                        }`}
+                >
+                    {/* Mobile Drawer Close Header */}
+                    <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-100 dark:border-slate-800 md:hidden">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                            <HardDrive className="w-4 h-4 text-[#CC6F00]" />
+                            <span>Navigasi Drive</span>
+                        </span>
+                        <button
+                            type="button"
+                            onClick={() => setIsMobileSidebarOpen(false)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    <div className="space-y-5">
                         {/* Navigation Menu */}
                         <div className="space-y-1">
                             <Link
                                 href={route('drive.index', { section: 'all' })}
                                 preserveState
-                                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                                    section === 'all'
+                                onClick={() => setIsMobileSidebarOpen(false)}
+                                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${section === 'all'
                                         ? 'bg-[#FEF9EC] dark:bg-amber-950/40 text-[#9A5B00] dark:text-[#F9E6A8] font-semibold border border-[#F2A900]/30'
                                         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900'
-                                }`}
+                                    }`}
                             >
                                 <HardDrive className="w-4 h-4 text-[#CC6F00]" />
                                 <span>My Drive</span>
@@ -1099,11 +1154,11 @@ export default function DriveIndex({
                             <Link
                                 href={route('drive.index', { section: 'recent' })}
                                 preserveState
-                                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                                    section === 'recent'
+                                onClick={() => setIsMobileSidebarOpen(false)}
+                                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${section === 'recent'
                                         ? 'bg-[#FEF9EC] dark:bg-amber-950/40 text-[#9A5B00] dark:text-[#F9E6A8] font-semibold border border-[#F2A900]/30'
                                         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900'
-                                }`}
+                                    }`}
                             >
                                 <Clock className="w-4 h-4 text-[#CC6F00]" />
                                 <span>Terbaru (Recent)</span>
@@ -1112,11 +1167,11 @@ export default function DriveIndex({
                             <Link
                                 href={route('drive.index', { section: 'starred' })}
                                 preserveState
-                                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                                    section === 'starred'
+                                onClick={() => setIsMobileSidebarOpen(false)}
+                                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${section === 'starred'
                                         ? 'bg-[#FEF9EC] dark:bg-amber-950/40 text-[#9A5B00] dark:text-[#F9E6A8] font-semibold border border-[#F2A900]/30'
                                         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900'
-                                }`}
+                                    }`}
                             >
                                 <Star className="w-4 h-4 text-[#F2A900] fill-[#F2A900]" />
                                 <span>Berbintang (Starred)</span>
@@ -1125,11 +1180,11 @@ export default function DriveIndex({
                             <Link
                                 href={route('drive.index', { section: 'trash' })}
                                 preserveState
-                                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
-                                    section === 'trash'
+                                onClick={() => setIsMobileSidebarOpen(false)}
+                                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${section === 'trash'
                                         ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 font-semibold border border-red-200 dark:border-red-900/60'
                                         : 'text-slate-600 dark:text-slate-400 hover:bg-red-50/50 hover:text-red-600'
-                                }`}
+                                    }`}
                             >
                                 <Trash2 className="w-4 h-4" />
                                 <span>Sampah (Trash)</span>
@@ -1137,7 +1192,10 @@ export default function DriveIndex({
 
                             <button
                                 type="button"
-                                onClick={() => setIsActivityLogOpen(true)}
+                                onClick={() => {
+                                    setIsMobileSidebarOpen(false);
+                                    setIsActivityLogOpen(true);
+                                }}
                                 className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-[#FEF9EC] hover:text-[#9A5B00] dark:hover:bg-slate-800 transition-all text-left"
                             >
                                 <Activity className="w-4 h-4 text-[#CC6F00]" />
@@ -1146,7 +1204,10 @@ export default function DriveIndex({
 
                             <button
                                 type="button"
-                                onClick={() => setIsFileRequestOpen(true)}
+                                onClick={() => {
+                                    setIsMobileSidebarOpen(false);
+                                    setIsFileRequestOpen(true);
+                                }}
                                 className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-[#FEF9EC] hover:text-[#9A5B00] dark:hover:bg-slate-800 transition-all text-left"
                             >
                                 <FileUp className="w-4 h-4 text-[#CC6F00]" />
@@ -1155,7 +1216,27 @@ export default function DriveIndex({
 
                             <button
                                 type="button"
-                                onClick={() => setIsDuplicatesOpen(true)}
+                                onClick={() => {
+                                    setIsMobileSidebarOpen(false);
+                                    setIsWhatsAppModalOpen(true);
+                                }}
+                                className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-[#E8F8F0] hover:text-[#075E54] dark:hover:bg-emerald-950/40 transition-all text-left group"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <MessageSquare className="w-4 h-4 text-[#25D366] group-hover:scale-110 transition-transform" />
+                                    <span>Integrasi WhatsApp</span>
+                                </div>
+                                <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-[#25D366]/15 text-[#075E54] dark:text-[#25D366]">
+                                    API
+                                </span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsMobileSidebarOpen(false);
+                                    setIsDuplicatesOpen(true);
+                                }}
                                 className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-[#FEF9EC] hover:text-[#9A5B00] dark:hover:bg-slate-800 transition-all text-left"
                             >
                                 <Files className="w-4 h-4 text-[#CC6F00]" />
@@ -1273,7 +1354,38 @@ export default function DriveIndex({
                 </aside>
 
                 {/* MAIN CONTENT AREA */}
-                <main className="flex-1 p-4 md:p-6 overflow-y-auto">
+                <main className="flex-1 p-3.5 sm:p-4 md:p-6 overflow-y-auto">
+                    {/* Mobile Quick Action Toolbar (visible on < md screens) */}
+                    <div className="mb-4 flex items-center justify-between gap-2 md:hidden">
+                        <button
+                            type="button"
+                            onClick={() => setIsMobileSidebarOpen(true)}
+                            className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 shadow-2xs hover:bg-slate-50 transition-colors active:scale-98"
+                        >
+                            <Layers className="w-4 h-4 text-[#CC6F00]" />
+                            <span>Menu & Kuota</span>
+                        </button>
+
+                        {section !== 'trash' && (
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs text-slate-950 bg-[#F2A900] hover:bg-[#CC6F00] hover:text-white shadow-xs transition-all active:scale-98"
+                                >
+                                    <Upload className="w-3.5 h-3.5" />
+                                    <span>Upload</span>
+                                </button>
+                                <button
+                                    onClick={() => setIsNewFolderOpen(true)}
+                                    className="p-2 rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 shadow-2xs active:scale-98"
+                                    title="Folder Baru"
+                                >
+                                    <FolderPlus className="w-4 h-4 text-[#CC6F00]" />
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
                     {/* Uploading progress bar with Cancel Action */}
                     {uploading && (
                         <div className="mb-6 p-4 rounded-2xl bg-white dark:bg-slate-900 border-2 border-[#F2A900]/50 shadow-md animate-fade-in">
@@ -1371,7 +1483,7 @@ export default function DriveIndex({
                     )}
 
                     {/* Filter Category Pills Bar */}
-                    <div className="mb-5 flex items-center gap-1.5 overflow-x-auto pb-1">
+                    <div className="mb-5 flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar max-w-full">
                         {FILTER_TABS.map((tab) => {
                             const IconComponent = tab.icon;
                             const isActive = activeFilter === tab.key;
@@ -1380,11 +1492,10 @@ export default function DriveIndex({
                                 <button
                                     key={tab.key}
                                     onClick={() => handleFilterChange(tab.key)}
-                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 ${
-                                        isActive
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 ${isActive
                                             ? 'bg-[#FEF9EC] dark:bg-amber-950/50 text-[#9A5B00] dark:text-[#F9E6A8] font-bold border border-[#F2A900]/40 shadow-xs'
                                             : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-800 hover:bg-slate-50'
-                                    }`}
+                                        }`}
                                 >
                                     <IconComponent className={`w-3.5 h-3.5 ${isActive ? 'text-[#CC6F00]' : 'text-slate-400'}`} />
                                     <span>{tab.label}</span>
@@ -1427,21 +1538,21 @@ export default function DriveIndex({
                                 {section === 'trash'
                                     ? 'Tempat sampah kosong'
                                     : section === 'starred'
-                                    ? 'Belum ada berkas berbintang'
-                                    : search
-                                    ? 'Tidak ada berkas yang sesuai dengan pencarian'
-                                    : activeFilter !== 'all'
-                                    ? 'Tidak ada berkas untuk kategori ini'
-                                    : 'Direktori ini belum memiliki berkas'}
+                                        ? 'Belum ada berkas berbintang'
+                                        : search
+                                            ? 'Tidak ada berkas yang sesuai dengan pencarian'
+                                            : activeFilter !== 'all'
+                                                ? 'Tidak ada berkas untuk kategori ini'
+                                                : 'Direktori ini belum memiliki berkas'}
                             </h3>
                             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mb-6">
                                 {section === 'trash'
                                     ? 'Tidak ada item yang dihapus saat ini.'
                                     : section === 'starred'
-                                    ? 'Tandai berkas atau folder penting Anda dengan bintang untuk akses cepat.'
-                                    : search
-                                    ? 'Coba gunakan kata kunci pencarian yang lain.'
-                                    : 'Mulai dengan mengunggah berkas atau membuat folder baru.'}
+                                        ? 'Tandai berkas atau folder penting Anda dengan bintang untuk akses cepat.'
+                                        : search
+                                            ? 'Coba gunakan kata kunci pencarian yang lain.'
+                                            : 'Mulai dengan mengunggah berkas atau membuat folder baru.'}
                             </p>
                             {section === 'all' && !search && activeFilter === 'all' && (
                                 <div className="flex items-center gap-3">
@@ -1460,6 +1571,140 @@ export default function DriveIndex({
                                         <span>Folder Baru</span>
                                     </button>
                                 </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* QUICK ACCESS (AKSES CEPAT) SECTION */}
+                    {section === 'all' && !currentFolder && !search && activeFilter === 'all' && (
+                        <div className="mb-8">
+                            <div className="flex items-center justify-between mb-3.5 flex-wrap gap-2">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-lg bg-amber-100 dark:bg-amber-950/60 flex items-center justify-center text-[#CC6F00]">
+                                        <Zap className="w-3.5 h-3.5 fill-[#CC6F00]" />
+                                    </div>
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                                        Akses Cepat
+                                    </h4>
+                                    <span className="text-[10px] font-semibold text-amber-800 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-900/60">
+                                        {((quickAccessTab === 'recent' ? quickAccess?.recent : quickAccess?.starred) || []).length} berkas
+                                    </span>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    {/* Switch between Recent & Starred */}
+                                    <div className="flex items-center p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                                        <button
+                                            type="button"
+                                            onClick={() => setQuickAccessTab('recent')}
+                                            className={`px-2.5 py-1 rounded-md transition-all ${quickAccessTab === 'recent'
+                                                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xs font-semibold'
+                                                    : 'hover:text-slate-900 dark:hover:text-slate-100'
+                                                }`}
+                                        >
+                                            Terbaru
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setQuickAccessTab('starred')}
+                                            className={`px-2.5 py-1 rounded-md transition-all ${quickAccessTab === 'starred'
+                                                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xs font-semibold'
+                                                    : 'hover:text-slate-900 dark:hover:text-slate-100'
+                                                }`}
+                                        >
+                                            Berbintang ({quickAccess?.starred?.length ?? 0})
+                                        </button>
+                                    </div>
+
+                                    {/* Collapse / Expand Toggle */}
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsQuickAccessCollapsed(!isQuickAccessCollapsed)}
+                                        className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                        title={isQuickAccessCollapsed ? 'Tampilkan Akses Cepat' : 'Sembunyikan Akses Cepat'}
+                                    >
+                                        <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isQuickAccessCollapsed ? '-rotate-90' : ''}`} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {!isQuickAccessCollapsed && (
+                                ((quickAccessTab === 'recent' ? quickAccess?.recent : quickAccess?.starred) || []).length > 0 ? (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+                                        {((quickAccessTab === 'recent' ? quickAccess?.recent : quickAccess?.starred) || []).map((file) => (
+                                            <div
+                                                key={`qa-${file.id}`}
+                                                onClick={() => setInspectedItem({ type: 'file', item: file })}
+                                                onDoubleClick={() => setPreviewFile(file)}
+                                                className="group relative flex flex-col justify-between p-3.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-[#F2A900]/70 hover:shadow-md transition-all cursor-pointer active:scale-98"
+                                            >
+                                                {/* Top row: Icon + Hover Quick Actions */}
+                                                <div className="flex items-center justify-between mb-2.5">
+                                                    <FileIcon extension={file.extension} mimeType={file.mime_type} className="w-7 h-7 shrink-0" />
+                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setPreviewFile(file);
+                                                            }}
+                                                            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                                            title="Pratinjau Cepat"
+                                                        >
+                                                            <Eye className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <a
+                                                            href={route('files.download', file.id)}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                trackDownload(file.name, file.formatted_size, route('files.download', file.id));
+                                                            }}
+                                                            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                                            title="Unduh Berkas"
+                                                        >
+                                                            <Download className="w-3.5 h-3.5" />
+                                                        </a>
+                                                    </div>
+                                                </div>
+
+                                                {/* Middle: File Name & Size */}
+                                                <div className="mb-2.5 min-w-0">
+                                                    <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-[#CC6F00] transition-colors" title={file.name}>
+                                                        {file.name}
+                                                    </p>
+                                                    <span className="text-[10px] text-slate-400 font-medium">
+                                                        {file.formatted_size}
+                                                    </span>
+                                                </div>
+
+                                                {/* Bottom: Folder origin badge & Time */}
+                                                <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400 gap-1">
+                                                    <span
+                                                        onClick={(e) => {
+                                                            if (file.folder_id) {
+                                                                e.stopPropagation();
+                                                                router.get(route('drive.index', { section: 'all', folder_id: file.folder_id }), {}, { preserveState: true });
+                                                            }
+                                                        }}
+                                                        className="truncate max-w-[95px] font-medium hover:text-[#CC6F00] hover:underline"
+                                                        title={`Lokasi folder: ${file.folder_name || 'My Drive'}`}
+                                                    >
+                                                        📁 {file.folder_name || 'My Drive'}
+                                                    </span>
+                                                    <span className="shrink-0 text-slate-400">
+                                                        {file.updated_at}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="p-6 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400 bg-slate-50/50 dark:bg-slate-900/30">
+                                        {quickAccessTab === 'starred'
+                                            ? 'Belum ada berkas berbintang. Berikan tanda bintang pada berkas penting untuk melihatnya di sini.'
+                                            : 'Belum ada berkas terkini.'}
+                                    </div>
+                                )
                             )}
                         </div>
                     )}
@@ -1489,20 +1734,18 @@ export default function DriveIndex({
                                                         router.get(route('drive.index', { section: 'all', folder_id: folder.id }), {}, { preserveState: true });
                                                     }
                                                 }}
-                                                className={`group relative flex items-center justify-between p-3.5 rounded-2xl border transition-all cursor-pointer ${
-                                                    isSelected
+                                                className={`group relative flex items-center justify-between p-3.5 rounded-2xl border transition-all cursor-pointer ${isSelected
                                                         ? 'border-[#F2A900] bg-[#FEF9EC]/50 dark:bg-amber-950/30 shadow-xs'
                                                         : 'border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-[#F2A900]/70 shadow-2xs hover:shadow-xs'
-                                                }`}
+                                                    }`}
                                             >
                                                 {/* Checkbox */}
                                                 <div
                                                     onClick={(e) => toggleSelectFolder(folder.id, e)}
-                                                    className={`mr-2.5 transition-opacity ${
-                                                        isSelected || totalSelected > 0
+                                                    className={`mr-2.5 transition-opacity ${isSelected || totalSelected > 0
                                                             ? 'opacity-100'
                                                             : 'opacity-0 group-hover:opacity-100'
-                                                    }`}
+                                                        }`}
                                                 >
                                                     {isSelected ? (
                                                         <CheckSquare className="w-4 h-4 text-[#CC6F00]" />
@@ -1532,11 +1775,10 @@ export default function DriveIndex({
                                                                 e.stopPropagation();
                                                                 router.post(route('folders.star', folder.id));
                                                             }}
-                                                            className={`p-1 rounded-lg transition-colors ${
-                                                                folder.is_starred
+                                                            className={`p-1 rounded-lg transition-colors ${folder.is_starred
                                                                     ? 'text-[#F2A900]'
                                                                     : 'text-slate-300 hover:text-[#F2A900] opacity-0 group-hover:opacity-100'
-                                                            }`}
+                                                                }`}
                                                             title={folder.is_starred ? 'Hapus bintang' : 'Beri bintang'}
                                                         >
                                                             <Star className={`w-3.5 h-3.5 ${folder.is_starred ? 'fill-[#F2A900]' : ''}`} />
@@ -1662,8 +1904,8 @@ export default function DriveIndex({
                                 </div>
                             ) : (
                                 /* LIST VIEW FOR FOLDERS */
-                                <div className="border border-slate-200/90 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900 shadow-xs">
-                                    <table className="w-full text-left border-collapse">
+                                <div className="border border-slate-200/90 dark:border-slate-800 rounded-2xl overflow-x-auto no-scrollbar bg-white dark:bg-slate-900 shadow-xs">
+                                    <table className="w-full min-w-[560px] sm:min-w-full text-left border-collapse">
                                         <thead>
                                             <tr className="border-b border-slate-200/80 dark:border-slate-800 text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider bg-slate-50/70 dark:bg-slate-800/40">
                                                 <th className="py-3 px-4 w-10">
@@ -1690,9 +1932,8 @@ export default function DriveIndex({
                                                                 router.get(route('drive.index', { section: 'all', folder_id: folder.id }), {}, { preserveState: true });
                                                             }
                                                         }}
-                                                        className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors cursor-pointer ${
-                                                            isSelected ? 'bg-[#FEF9EC]/50 dark:bg-amber-950/20' : ''
-                                                        }`}
+                                                        className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors cursor-pointer ${isSelected ? 'bg-[#FEF9EC]/50 dark:bg-amber-950/20' : ''
+                                                            }`}
                                                     >
                                                         <td className="py-3 px-4" onClick={(e) => toggleSelectFolder(folder.id, e)}>
                                                             {isSelected ? (
@@ -1731,9 +1972,8 @@ export default function DriveIndex({
                                                                     <>
                                                                         <button
                                                                             onClick={() => router.post(route('folders.star', folder.id))}
-                                                                            className={`p-1.5 rounded-lg transition-colors ${
-                                                                                folder.is_starred ? 'text-[#F2A900]' : 'text-slate-400 hover:text-[#F2A900]'
-                                                                            }`}
+                                                                            className={`p-1.5 rounded-lg transition-colors ${folder.is_starred ? 'text-[#F2A900]' : 'text-slate-400 hover:text-[#F2A900]'
+                                                                                }`}
                                                                             title={folder.is_starred ? 'Hapus bintang' : 'Beri bintang'}
                                                                         >
                                                                             <Star className={`w-3.5 h-3.5 ${folder.is_starred ? 'fill-[#F2A900]' : ''}`} />
@@ -1868,21 +2108,19 @@ export default function DriveIndex({
                                                 key={file.id}
                                                 onClick={() => setInspectedItem({ type: 'file', item: file })}
                                                 onDoubleClick={() => setPreviewFile(file)}
-                                                className={`group relative flex flex-col justify-between p-3.5 rounded-2xl border transition-all cursor-pointer ${
-                                                    isSelected
+                                                className={`group relative flex flex-col justify-between p-3.5 rounded-2xl border transition-all cursor-pointer ${isSelected
                                                         ? 'border-[#F2A900] bg-[#FEF9EC]/50 dark:bg-amber-950/30 shadow-xs'
                                                         : 'border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-[#F2A900]/70 shadow-2xs hover:shadow-xs'
-                                                }`}
+                                                    }`}
                                             >
                                                 {/* Top header on card */}
                                                 <div className="flex items-center justify-between mb-3">
                                                     <div
                                                         onClick={(e) => toggleSelectFile(file.id, e)}
-                                                        className={`transition-opacity ${
-                                                            isSelected || totalSelected > 0
+                                                        className={`transition-opacity ${isSelected || totalSelected > 0
                                                                 ? 'opacity-100'
                                                                 : 'opacity-0 group-hover:opacity-100'
-                                                        }`}
+                                                            }`}
                                                     >
                                                         {isSelected ? (
                                                             <CheckSquare className="w-4 h-4 text-[#CC6F00]" />
@@ -1910,11 +2148,10 @@ export default function DriveIndex({
                                                                     e.stopPropagation();
                                                                     router.post(route('files.star', file.id));
                                                                 }}
-                                                                className={`p-1 rounded-lg transition-colors ${
-                                                                    file.is_starred
+                                                                className={`p-1 rounded-lg transition-colors ${file.is_starred
                                                                         ? 'text-[#F2A900]'
                                                                         : 'text-slate-300 hover:text-[#F2A900] opacity-0 group-hover:opacity-100'
-                                                                }`}
+                                                                    }`}
                                                                 title={file.is_starred ? 'Hapus bintang' : 'Beri bintang'}
                                                             >
                                                                 <Star className={`w-3.5 h-3.5 ${file.is_starred ? 'fill-[#F2A900]' : ''}`} />
@@ -2153,8 +2390,8 @@ export default function DriveIndex({
                                 </div>
                             ) : (
                                 /* LIST VIEW */
-                                <div className="border border-slate-200/90 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900 shadow-xs">
-                                    <table className="w-full text-left border-collapse">
+                                <div className="border border-slate-200/90 dark:border-slate-800 rounded-2xl overflow-x-auto no-scrollbar bg-white dark:bg-slate-900 shadow-xs">
+                                    <table className="w-full min-w-[560px] sm:min-w-full text-left border-collapse">
                                         <thead>
                                             <tr className="border-b border-slate-200/80 dark:border-slate-800 text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider bg-slate-50/70 dark:bg-slate-800/40">
                                                 <th className="py-3 px-4 w-10 cursor-pointer" onClick={handleSelectAll} title="Pilih Semua / Batal Pilih">
@@ -2183,9 +2420,8 @@ export default function DriveIndex({
                                                         key={file.id}
                                                         onClick={() => setInspectedItem({ type: 'file', item: file })}
                                                         onDoubleClick={() => setPreviewFile(file)}
-                                                        className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors cursor-pointer ${
-                                                            isSelected ? 'bg-[#FEF9EC]/50 dark:bg-amber-950/20' : ''
-                                                        }`}
+                                                        className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors cursor-pointer ${isSelected ? 'bg-[#FEF9EC]/50 dark:bg-amber-950/20' : ''
+                                                            }`}
                                                     >
                                                         <td className="py-3 px-4" onClick={(e) => toggleSelectFile(file.id, e)}>
                                                             {isSelected ? (
@@ -2336,176 +2572,182 @@ export default function DriveIndex({
                     )}
                 </main>
 
-                {/* INSPECTOR DETAILS SIDEBAR (Toggleable Drawer) */}
+                {/* INSPECTOR DETAILS SIDEBAR (Responsive Slide-over Drawer on Mobile / Panel on Desktop) */}
                 {inspectedItem && (
-                    <aside className="w-full md:w-72 p-5 border-l border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/90 shrink-0 space-y-5 animate-fade-in">
-                        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                                <Info className="w-3.5 h-3.5 text-[#CC6F00]" />
-                                <span>Detail {inspectedItem.type === 'folder' ? 'Folder' : 'Berkas'}</span>
-                            </span>
-                            <button
-                                onClick={() => setInspectedItem(null)}
-                                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                            >
-                                <X className="w-3.5 h-3.5" />
-                            </button>
-                        </div>
-
-                        {/* Large Preview Thumbnail */}
-                        <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 text-center">
-                            {inspectedItem.type === 'folder' ? (
-                                <CustomFolderIcon
-                                    color={(inspectedItem.item as FolderItem).color || '#F2A900'}
-                                    className="w-16 h-16 mb-2"
-                                />
-                            ) : (
-                                <FileIcon
-                                    extension={(inspectedItem.item as FileItem).extension}
-                                    mimeType={(inspectedItem.item as FileItem).mime_type}
-                                    className="w-16 h-16 mb-2"
-                                />
-                            )}
-                            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100 max-w-full break-all">
-                                {inspectedItem.item.name}
-                            </h4>
-                            {inspectedItem.type === 'file' && (
-                                <span className="text-[11px] text-slate-400 mt-0.5">
-                                    {(inspectedItem.item as FileItem).formatted_size}
+                    <>
+                        <div
+                            className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-2xs md:hidden animate-fade-in"
+                            onClick={() => setInspectedItem(null)}
+                        />
+                        <aside className="fixed inset-y-0 right-0 z-50 w-full sm:w-80 md:static md:z-auto md:w-72 p-5 border-l border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/95 shrink-0 space-y-5 shadow-2xl md:shadow-none overflow-y-auto animate-fade-in">
+                            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                                <span className="text-xs font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                                    <Info className="w-3.5 h-3.5 text-[#CC6F00]" />
+                                    <span>Detail {inspectedItem.type === 'folder' ? 'Folder' : 'Berkas'}</span>
                                 </span>
-                            )}
-                        </div>
-
-                        {/* Metadata Details List */}
-                        <div className="space-y-2.5 text-xs">
-                            <div>
-                                <span className="text-[10px] uppercase font-semibold text-slate-400">Tipe</span>
-                                <p className="font-medium text-slate-700 dark:text-slate-200">
-                                    {inspectedItem.type === 'folder'
-                                        ? 'Direktori Folder'
-                                        : (inspectedItem.item as FileItem).mime_type || 'Berkas Dokumen'}
-                                </p>
+                                <button
+                                    onClick={() => setInspectedItem(null)}
+                                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
                             </div>
 
-                            {inspectedItem.type === 'file' && (
+                            {/* Large Preview Thumbnail */}
+                            <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 text-center">
+                                {inspectedItem.type === 'folder' ? (
+                                    <CustomFolderIcon
+                                        color={(inspectedItem.item as FolderItem).color || '#F2A900'}
+                                        className="w-16 h-16 mb-2"
+                                    />
+                                ) : (
+                                    <FileIcon
+                                        extension={(inspectedItem.item as FileItem).extension}
+                                        mimeType={(inspectedItem.item as FileItem).mime_type}
+                                        className="w-16 h-16 mb-2"
+                                    />
+                                )}
+                                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100 max-w-full break-all">
+                                    {inspectedItem.item.name}
+                                </h4>
+                                {inspectedItem.type === 'file' && (
+                                    <span className="text-[11px] text-slate-400 mt-0.5">
+                                        {(inspectedItem.item as FileItem).formatted_size}
+                                    </span>
+                                )}
+                            </div>
+
+                            {/* Metadata Details List */}
+                            <div className="space-y-2.5 text-xs">
                                 <div>
-                                    <span className="text-[10px] uppercase font-semibold text-slate-400">Ekstensi</span>
-                                    <p className="font-mono text-slate-700 dark:text-slate-200 uppercase">
-                                        {(inspectedItem.item as FileItem).extension || '—'}
+                                    <span className="text-[10px] uppercase font-semibold text-slate-400">Tipe</span>
+                                    <p className="font-medium text-slate-700 dark:text-slate-200">
+                                        {inspectedItem.type === 'folder'
+                                            ? 'Direktori Folder'
+                                            : (inspectedItem.item as FileItem).mime_type || 'Berkas Dokumen'}
                                     </p>
                                 </div>
-                            )}
 
-                            <div>
-                                <span className="text-[10px] uppercase font-semibold text-slate-400">
-                                    {section === 'trash' ? 'Waktu Terhapus' : 'Terakhir Diperbarui'}
-                                </span>
-                                <p className="text-slate-700 dark:text-slate-200">
-                                    {section === 'trash' && inspectedItem.item.deleted_at
-                                        ? inspectedItem.item.deleted_at
-                                        : inspectedItem.item.updated_at || '—'}
-                                </p>
+                                {inspectedItem.type === 'file' && (
+                                    <div>
+                                        <span className="text-[10px] uppercase font-semibold text-slate-400">Ekstensi</span>
+                                        <p className="font-mono text-slate-700 dark:text-slate-200 uppercase">
+                                            {(inspectedItem.item as FileItem).extension || '—'}
+                                        </p>
+                                    </div>
+                                )}
+
+                                <div>
+                                    <span className="text-[10px] uppercase font-semibold text-slate-400">
+                                        {section === 'trash' ? 'Waktu Terhapus' : 'Terakhir Diperbarui'}
+                                    </span>
+                                    <p className="text-slate-700 dark:text-slate-200">
+                                        {section === 'trash' && inspectedItem.item.deleted_at
+                                            ? inspectedItem.item.deleted_at
+                                            : inspectedItem.item.updated_at || '—'}
+                                    </p>
+                                </div>
+
+                                {inspectedItem.type === 'file' && (
+                                    <div>
+                                        <span className="text-[10px] uppercase font-semibold text-slate-400">Status Berbagi</span>
+                                        <p className="flex items-center gap-1.5 mt-0.5">
+                                            {(inspectedItem.item as FileItem).has_active_share ? (
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                                    Dibagikan Publik
+                                                </span>
+                                            ) : (
+                                                <span className="text-slate-500 text-[11px]">Privat</span>
+                                            )}
+                                        </p>
+                                    </div>
+                                )}
                             </div>
 
-                            {inspectedItem.type === 'file' && (
-                                <div>
-                                    <span className="text-[10px] uppercase font-semibold text-slate-400">Status Berbagi</span>
-                                    <p className="flex items-center gap-1.5 mt-0.5">
-                                        {(inspectedItem.item as FileItem).has_active_share ? (
-                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                                Dibagikan Publik
-                                            </span>
+                            {/* Quick Action Buttons in Inspector */}
+                            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                                {inspectedItem.type === 'file' ? (
+                                    <>
+                                        <button
+                                            onClick={() => setPreviewFile(inspectedItem.item as FileItem)}
+                                            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 transition-colors"
+                                        >
+                                            <Eye className="w-3.5 h-3.5 text-[#CC6F00]" />
+                                            <span>Pratinjau Berkas</span>
+                                        </button>
+
+                                        <a
+                                            href={route('files.download', (inspectedItem.item as FileItem).id)}
+                                            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-slate-900 bg-[#F2A900] hover:bg-[#CC6F00] hover:text-white transition-all shadow-xs"
+                                        >
+                                            <Download className="w-3.5 h-3.5" />
+                                            <span>Unduh Berkas</span>
+                                        </a>
+
+                                        {section !== 'trash' ? (
+                                            <>
+                                                <button
+                                                    onClick={() => setShareFile(inspectedItem.item as FileItem)}
+                                                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 transition-colors"
+                                                >
+                                                    <Share2 className="w-3.5 h-3.5 text-[#CC6F00]" />
+                                                    <span>Kelola Tautan Berbagi</span>
+                                                </button>
+
+                                                <button
+                                                    onClick={() => setHistoryFile(inspectedItem.item as FileItem)}
+                                                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 transition-colors"
+                                                >
+                                                    <History className="w-3.5 h-3.5 text-violet-600" />
+                                                    <span>Riwayat Versi Berkas</span>
+                                                </button>
+
+                                                <button
+                                                    onClick={() => handleDuplicateFile(inspectedItem.item as FileItem)}
+                                                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 transition-colors"
+                                                >
+                                                    <Copy className="w-3.5 h-3.5 text-[#CC6F00]" />
+                                                    <span>Buat Salinan (Duplikasi)</span>
+                                                </button>
+                                            </>
                                         ) : (
-                                            <span className="text-slate-500 text-[11px]">Privat</span>
+                                            <>
+                                                <button
+                                                    onClick={() => router.post(route('files.restore', (inspectedItem.item as FileItem).id))}
+                                                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors"
+                                                >
+                                                    <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                                                    <span>Pulihkan Berkas Ini</span>
+                                                </button>
+
+                                                <button
+                                                    onClick={() => handlePermanentDeleteFile((inspectedItem.item as FileItem).id, inspectedItem.item.name)}
+                                                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors shadow-xs"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                    <span>Hapus Permanen</span>
+                                                </button>
+                                            </>
                                         )}
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Quick Action Buttons in Inspector */}
-                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
-                            {inspectedItem.type === 'file' ? (
-                                <>
-                                    <button
-                                        onClick={() => setPreviewFile(inspectedItem.item as FileItem)}
-                                        className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 transition-colors"
-                                    >
-                                        <Eye className="w-3.5 h-3.5 text-[#CC6F00]" />
-                                        <span>Pratinjau Berkas</span>
-                                    </button>
-
+                                    </>
+                                ) : (
                                     <a
-                                        href={route('files.download', (inspectedItem.item as FileItem).id)}
+                                        href={route('folders.download', inspectedItem.item.id)}
                                         className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-slate-900 bg-[#F2A900] hover:bg-[#CC6F00] hover:text-white transition-all shadow-xs"
                                     >
                                         <Download className="w-3.5 h-3.5" />
-                                        <span>Unduh Berkas</span>
+                                        <span>Unduh Folder (.ZIP)</span>
                                     </a>
-
-                                    {section !== 'trash' ? (
-                                        <>
-                                            <button
-                                                onClick={() => setShareFile(inspectedItem.item as FileItem)}
-                                                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 transition-colors"
-                                            >
-                                                <Share2 className="w-3.5 h-3.5 text-[#CC6F00]" />
-                                                <span>Kelola Tautan Berbagi</span>
-                                            </button>
-
-                                            <button
-                                                onClick={() => setHistoryFile(inspectedItem.item as FileItem)}
-                                                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 transition-colors"
-                                            >
-                                                <History className="w-3.5 h-3.5 text-violet-600" />
-                                                <span>Riwayat Versi Berkas</span>
-                                            </button>
-
-                                            <button
-                                                onClick={() => handleDuplicateFile(inspectedItem.item as FileItem)}
-                                                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 transition-colors"
-                                            >
-                                                <Copy className="w-3.5 h-3.5 text-[#CC6F00]" />
-                                                <span>Buat Salinan (Duplikasi)</span>
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <button
-                                                onClick={() => router.post(route('files.restore', (inspectedItem.item as FileItem).id))}
-                                                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors"
-                                            >
-                                                <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
-                                                <span>Pulihkan Berkas Ini</span>
-                                            </button>
-
-                                            <button
-                                                onClick={() => handlePermanentDeleteFile((inspectedItem.item as FileItem).id, inspectedItem.item.name)}
-                                                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors shadow-xs"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                                <span>Hapus Permanen</span>
-                                            </button>
-                                        </>
-                                    )}
-                                </>
-                            ) : (
-                                <a
-                                    href={route('folders.download', inspectedItem.item.id)}
-                                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold text-slate-900 bg-[#F2A900] hover:bg-[#CC6F00] hover:text-white transition-all shadow-xs"
-                                >
-                                    <Download className="w-3.5 h-3.5" />
-                                    <span>Unduh Folder (.ZIP)</span>
-                                </a>
-                            )}
-                        </div>
-                    </aside>
+                                )}
+                            </div>
+                        </aside>
+                    </>
                 )}
             </div>
 
             {/* STICKY FLOATING BATCH ACTIONS BAR */}
             {totalSelected > 0 && (
-                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-fade-in font-poppins text-xs">
+                <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white px-3 sm:px-5 py-2.5 sm:py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-2 sm:gap-3 max-w-[calc(100vw-1.5rem)] overflow-x-auto no-scrollbar animate-fade-in font-poppins text-xs">
                     <div className="flex items-center gap-2 pr-2 border-r border-slate-700">
                         <CheckSquare className="w-4 h-4 text-[#F2A900]" />
                         <span className="font-bold">{totalSelected} item dipilih</span>
@@ -2691,11 +2933,17 @@ export default function DriveIndex({
                 availableFolders={availableFolders}
             />
 
+            <WhatsAppIntegrationModal
+                isOpen={isWhatsAppModalOpen}
+                onClose={() => setIsWhatsAppModalOpen(false)}
+                userToken={auth.user?.webhook_token}
+            />
+
             {/* FLOATING UPLOAD DOCK (Stays visible on scroll and across navigation) */}
             {uploading && (
                 <div
                     aria-live="polite"
-                    className="fixed bottom-6 right-6 z-50 w-80 sm:w-96 p-4 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-2 border-[#F2A900] shadow-2xl animate-fade-in font-poppins"
+                    className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-96 p-3.5 sm:p-4 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-2 border-[#F2A900] shadow-2xl animate-fade-in font-poppins"
                 >
                     <div className="flex items-center justify-between gap-2 mb-2">
                         <div className="flex items-center gap-2 min-w-0">

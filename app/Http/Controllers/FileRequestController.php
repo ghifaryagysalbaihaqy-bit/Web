@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
+use App\Models\FileEntry;
 use App\Models\FileRequest;
 use App\Models\Folder;
 use Carbon\Carbon;
@@ -182,6 +183,14 @@ class FileRequestController extends Controller
         foreach ($files as $file) {
             $originalName = $file->getClientOriginalName();
             $extension = strtolower($file->getClientOriginalExtension() ?: (string) pathinfo($originalName, PATHINFO_EXTENSION));
+
+            if (FileEntry::isDangerousExtension($extension)) {
+                return response()->json([
+                    'error' => "Format berkas '.{$extension}' tidak diizinkan demi keamanan server.",
+                ], 422);
+            }
+
+            $safeOriginalName = FileEntry::sanitizeFileName($originalName);
             $mimeType = $file->getMimeType() ?: 'application/octet-stream';
             $size = $file->getSize();
             $checksum = @md5_file($file->getRealPath()) ?: null;
@@ -190,7 +199,7 @@ class FileRequestController extends Controller
 
             $createdEntry = $owner->files()->create([
                 'folder_id' => $fileRequest->folder_id,
-                'name' => $originalName,
+                'name' => $safeOriginalName,
                 'path' => $path,
                 'mime_type' => $mimeType,
                 'extension' => $extension,
@@ -203,7 +212,7 @@ class FileRequestController extends Controller
             ActivityLog::record(
                 $owner->id,
                 'file_request_upload',
-                $originalName,
+                $safeOriginalName,
                 'file',
                 "Menerima berkas melalui permintaan \"{$fileRequest->title}\"{$uploader}"
             );

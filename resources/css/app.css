@@ -39,3 +39,12 @@
 .animate-toast-progress {
     animation: toastProgress 5s linear forwards;
 }
+
+/* Hide scrollbar utility for sleek mobile touch-scroll areas */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}

@@ -5,6 +5,7 @@ export interface User {
     email_verified_at?: string;
     storage_limit?: number;
     is_admin?: boolean;
+    webhook_token?: string;
 }
 
 export interface FolderItem {
@@ -31,6 +32,7 @@ export interface FileItem {
     tags?: string[];
     has_active_share?: boolean;
     folder_id: number | null;
+    folder_name?: string;
     is_image: boolean;
     is_pdf: boolean;
     is_audio: boolean;
@@ -39,6 +41,11 @@ export interface FileItem {
     created_at: string;
     updated_at: string;
     deleted_at?: string | null;
+}
+
+export interface QuickAccessData {
+    recent: FileItem[];
+    starred: FileItem[];
 }
 
 export interface ShareLinkItem {

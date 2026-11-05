@@ -123,7 +123,11 @@ export default function FileRequestPublic({ fileRequest }: FileRequestPublicProp
 
     return (
         <div className="relative min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4 font-poppins text-slate-800">
-            <Head title={`Permintaan Berkas: ${fileRequest.title}`} />
+            <Head>
+                <title>{`Kirim Berkas: ${fileRequest.title} - CloudVault`}</title>
+                <meta name="robots" content="noindex, nofollow" />
+                <meta name="description" content="Tautan permintaan pengunggahan berkas CloudVault." />
+            </Head>
 
             {/* Ambient Lighting */}
             <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden">
@@ -137,7 +141,7 @@ export default function FileRequestPublic({ fileRequest }: FileRequestPublicProp
                 <ApplicationLogo />
             </div>
 
-            <div className="w-full max-w-lg bg-white/90 backdrop-blur-md rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/50 border border-slate-200/80">
+            <div className="w-full max-w-lg bg-white/90 backdrop-blur-md rounded-3xl p-5 sm:p-8 shadow-xl shadow-slate-200/50 border border-slate-200/80">
                 {isSuccess ? (
                     <div className="text-center py-6 animate-fade-in">
                         <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center mx-auto mb-4 shadow-xs">

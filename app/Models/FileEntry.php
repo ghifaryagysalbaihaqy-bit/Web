@@ -15,6 +15,38 @@ class FileEntry extends Model
     use HasFactory, SoftDeletes;
 
     /**
+     * Dangerous executable extensions blocked from being uploaded to server.
+     *
+     * @var list<string>
+     */
+    public const BLOCKED_EXTENSIONS = [
+        'php', 'phtml', 'phar', 'php3', 'php4', 'php5', 'php7', 'php8',
+        'sh', 'bash', 'exe', 'bat', 'cmd', 'vbs', 'com',
+        'scr', 'cpl', 'jar', 'cgi', 'pl', 'htaccess', 'htpasswd',
+    ];
+
+    /**
+     * Check if a file extension is blocked for security reasons.
+     */
+    public static function isDangerousExtension(string $extension): bool
+    {
+        return in_array(strtolower(trim($extension)), self::BLOCKED_EXTENSIONS, true);
+    }
+
+    /**
+     * Sanitize a file name against path traversal, null bytes, and control chars.
+     */
+    public static function sanitizeFileName(string $name): string
+    {
+        $base = basename(str_replace('\\', '/', $name));
+        $clean = str_replace(["\0", "\r", "\n", '"', "'", '/', '\\'], '', $base);
+        $clean = ltrim($clean, '.');
+        $clean = trim((string) $clean);
+
+        return $clean !== '' ? $clean : 'file_'.time();
+    }
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var list<string>
@@ -102,12 +134,10 @@ class FileEntry extends Model
     }
 
     /**
-     * Get human-readable formatted file size.
+     * Format raw bytes into human-readable representation.
      */
-    public function getFormattedSizeAttribute(): string
+    public static function formatBytes(int|float $bytes): string
     {
-        $bytes = $this->size;
-
         if ($bytes >= 1073741824) {
             return number_format($bytes / 1073741824, 2).' GB';
         }
@@ -121,6 +151,14 @@ class FileEntry extends Model
         }
 
         return $bytes.' B';
+    }
+
+    /**
+     * Get human-readable formatted file size.
+     */
+    public function getFormattedSizeAttribute(): string
+    {
+        return self::formatBytes($this->size ?? 0);
     }
 
     /**

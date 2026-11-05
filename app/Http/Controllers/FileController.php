@@ -20,10 +20,21 @@ class FileController extends Controller
      */
     public function upload(Request $request): RedirectResponse|JsonResponse
     {
+        // Support 'file' single parameter alias
+        if (! $request->hasFile('files') && $request->hasFile('file')) {
+            $request->files->set('files', [$request->file('file')]);
+        } elseif ($request->hasFile('files') && ! is_array($request->file('files'))) {
+            $request->files->set('files', [$request->file('files')]);
+        }
+
         $request->validate([
             'files' => ['required', 'array'],
             'files.*' => ['required', 'file'],
             'folder_id' => ['nullable', 'exists:folders,id'],
+        ], [
+            'files.required' => 'Pilih setidaknya satu berkas untuk diunggah.',
+            'files.*.required' => 'Berkas tidak boleh kosong.',
+            'files.*.file' => 'Berkas gagal diunggah atau melebihi konfigurasi server.',
         ]);
 
         $user = $request->user();
@@ -45,14 +56,23 @@ class FileController extends Controller
         $usedStorage = $user->usedStorage();
         $storageLimit = (int) ($user->storage_limit ?: 5368709120);
         if ($usedStorage + $totalBytes > $storageLimit) {
+            $remainingFormatted = FileEntry::formatBytes(max(0, $storageLimit - $usedStorage));
             throw ValidationException::withMessages([
-                'files' => 'Kapasitas penyimpanan tidak mencukupi untuk mengunggah file ini.',
+                'files' => "Kapasitas penyimpanan tidak mencukupi untuk mengunggah file ini. Sisa kuota Anda adalah {$remainingFormatted}.",
             ]);
         }
 
         foreach ($files as $file) {
             $originalName = $file->getClientOriginalName();
             $extension = strtolower($file->getClientOriginalExtension() ?: (string) pathinfo($originalName, PATHINFO_EXTENSION));
+
+            if (FileEntry::isDangerousExtension($extension)) {
+                throw ValidationException::withMessages([
+                    'files' => "Ekstensi berkas '.{$extension}' dilarang demi keamanan server.",
+                ]);
+            }
+
+            $safeOriginalName = FileEntry::sanitizeFileName($originalName);
             $mimeType = $file->getMimeType() ?: 'application/octet-stream';
             $size = $file->getSize();
             $checksum = @md5_file($file->getRealPath()) ?: null;
@@ -62,7 +82,7 @@ class FileController extends Controller
 
             $createdEntry = $user->files()->create([
                 'folder_id' => $folderId,
-                'name' => $originalName,
+                'name' => $safeOriginalName,
                 'path' => $path,
                 'mime_type' => $mimeType,
                 'extension' => $extension,
@@ -76,7 +96,7 @@ class FileController extends Controller
             ActivityLog::record(
                 $user->id,
                 'upload',
-                $originalName,
+                $safeOriginalName,
                 'file',
                 "Mengunggah berkas ({$createdEntry->formatted_size})"
             );
@@ -118,7 +138,9 @@ class FileController extends Controller
             abort(404, 'File fisik tidak ditemukan pada server.');
         }
 
-        return Storage::disk('local')->download($file->path, $file->name);
+        $cleanName = FileEntry::sanitizeFileName($file->name);
+
+        return Storage::disk('local')->download($file->path, $cleanName);
     }
 
     /**
@@ -134,9 +156,17 @@ class FileController extends Controller
             abort(404, 'File fisik tidak ditemukan.');
         }
 
-        return Storage::disk('local')->response($file->path, $file->name, [
-            'Content-Disposition' => 'inline; filename="'.$file->name.'"',
-        ]);
+        $cleanName = FileEntry::sanitizeFileName($file->name);
+        $headers = [
+            'Content-Disposition' => 'inline; filename="'.$cleanName.'"',
+            'X-Content-Type-Options' => 'nosniff',
+        ];
+
+        if ($file->extension === 'svg' || $file->mime_type === 'image/svg+xml') {
+            $headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+        }
+
+        return Storage::disk('local')->response($file->path, $cleanName, $headers);
     }
 
     /**
@@ -156,15 +186,24 @@ class FileController extends Controller
             'name' => ['required', 'string', 'max:255'],
         ]);
 
+        $cleanName = FileEntry::sanitizeFileName($validated['name']);
+        $newExt = strtolower((string) pathinfo($cleanName, PATHINFO_EXTENSION));
+        if ($newExt && FileEntry::isDangerousExtension($newExt)) {
+            return back()->with('error', "Ekstensi berkas '.{$newExt}' dilarang demi keamanan server.");
+        }
+
         $oldName = $file->name;
-        $file->update($validated);
+        $file->update([
+            'name' => $cleanName,
+            'extension' => $newExt ?: $file->extension,
+        ]);
 
         ActivityLog::record(
             $request->user()->id,
             'rename',
-            $validated['name'],
+            $cleanName,
             'file',
-            "Mengubah nama berkas dari \"{$oldName}\" menjadi \"{$validated['name']}\""
+            "Mengubah nama berkas dari \"{$oldName}\" menjadi \"{$cleanName}\""
         );
 
         return back()->with('success', 'Nama file berhasil diperbarui.');

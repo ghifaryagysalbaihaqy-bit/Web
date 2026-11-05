@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -168,6 +169,13 @@ class ShareController extends Controller
         $owner = $shareLink->user;
         $fileEntry = $shareLink->fileEntry;
         $uploadedFile = $request->file('file');
+        $ext = strtolower($uploadedFile->getClientOriginalExtension() ?: (string) pathinfo($uploadedFile->getClientOriginalName(), PATHINFO_EXTENSION));
+
+        if (FileEntry::isDangerousExtension($ext)) {
+            return response()->json([
+                'message' => "Format berkas '.{$ext}' dilarang demi keamanan server.",
+            ], 422);
+        }
 
         // Check owner storage quota
         $usedStorage = $owner->usedStorage();
@@ -233,14 +241,24 @@ class ShareController extends Controller
     {
         $shareLink = ShareLink::where('token', $token)->firstOrFail();
 
+        $key = 'share-unlock:'.$shareLink->id.':'.$request->ip();
+        if (RateLimiter::tooManyAttempts($key, 6)) {
+            $seconds = RateLimiter::availableIn($key);
+
+            return back()->withErrors(['password' => "Terlalu banyak percobaan salah. Silakan coba lagi dalam {$seconds} detik."]);
+        }
+
         $request->validate([
             'password' => ['required', 'string'],
         ]);
 
         if (! Hash::check($request->input('password'), $shareLink->password)) {
+            RateLimiter::hit($key, 60);
+
             return back()->withErrors(['password' => 'Password salah.']);
         }
 
+        RateLimiter::clear($key);
         $request->session()->put('unlocked_share_'.$shareLink->id, true);
 
         return back();
@@ -268,8 +286,9 @@ class ShareController extends Controller
         }
 
         $shareLink->increment('downloads_count');
+        $cleanName = FileEntry::sanitizeFileName($file->name);
 
-        return Storage::disk('local')->download($file->path, $file->name);
+        return Storage::disk('local')->download($file->path, $cleanName);
     }
 
     /**
@@ -293,9 +312,17 @@ class ShareController extends Controller
             abort(404, 'File fisik tidak ditemukan.');
         }
 
-        return Storage::disk('local')->response($file->path, $file->name, [
-            'Content-Disposition' => 'inline; filename="'.$file->name.'"',
-        ]);
+        $cleanName = FileEntry::sanitizeFileName($file->name);
+        $headers = [
+            'Content-Disposition' => 'inline; filename="'.$cleanName.'"',
+            'X-Content-Type-Options' => 'nosniff',
+        ];
+
+        if ($file->extension === 'svg' || $file->mime_type === 'image/svg+xml') {
+            $headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+        }
+
+        return Storage::disk('local')->response($file->path, $cleanName, $headers);
     }
 
     /**

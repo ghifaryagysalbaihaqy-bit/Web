@@ -32,11 +32,23 @@ import ApplicationLogo from '@/Components/ApplicationLogo';
 export default function Welcome({ auth }: PageProps) {
     return (
         <div className="min-h-screen bg-white text-slate-800 font-poppins selection:bg-[#F2A900] selection:text-slate-900 relative overflow-x-clip scroll-smooth">
-            <Head title="CloudVault - Private Enterprise Cloud Storage" />
+            <Head>
+                <title>CloudVault - Penyimpanan Cloud Mandiri Berkecepatan Tinggi</title>
+                <meta
+                    name="description"
+                    content="Kelola dan amankan dokumen penting Anda di server pribadi dengan CloudVault. Akses pengguna dibatasi secara ketat dengan fitur drag & drop, pratinjau instan, dan tautan berbagi berpassword."
+                />
+                <meta name="keywords" content="cloud storage, cloudvault, penyimpanan cloud mandiri, private server, hosting berkas, file manager, enkripsi berkas" />
+                <meta property="og:title" content="CloudVault - Penyimpanan Cloud Mandiri Berkecepatan Tinggi" />
+                <meta property="og:description" content="Kelola dan amankan dokumen penting Anda di server pribadi dengan CloudVault. Fitur drag & drop, pratinjau instan, dan tautan berbagi berpassword." />
+                <meta property="og:type" content="website" />
+                <meta name="twitter:title" content="CloudVault - Penyimpanan Cloud Mandiri Berkecepatan Tinggi" />
+                <meta name="twitter:description" content="Kelola dan amankan dokumen penting Anda di server pribadi dengan CloudVault." />
+            </Head>
 
             {/* Top Navigation / Header Permanently Anchored (Fixed) at the Top */}
             <header className="fixed top-0 left-0 right-0 z-50 bg-slate-950/95 backdrop-blur-md border-b border-slate-800 shadow-xl shadow-slate-950/20 transition-all">
-                <div className="max-w-7xl mx-auto px-6 py-3.5 flex items-center justify-between">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <ApplicationLogo isDark={true} />
                     </div>
@@ -81,7 +93,7 @@ export default function Welcome({ auth }: PageProps) {
             <div className="absolute inset-0 top-[72px] bg-[linear-gradient(to_right,#f1f5f9_1px,transparent_1px),linear-gradient(to_bottom,#f1f5f9_1px,transparent_1px)] bg-[size:3.5rem_3.5rem] [mask-image:radial-gradient(ellipse_70%_50%_at_50%_0%,#000_65%,transparent_100%)] pointer-events-none opacity-60" />
 
             {/* Hero Section */}
-            <main className="relative max-w-7xl mx-auto px-6 pt-12 sm:pt-16 pb-20">
+            <main className="relative max-w-7xl mx-auto px-4 sm:px-6 pt-10 sm:pt-16 pb-20">
                 {/* Badge Tag */}
                 <div className="flex justify-center">
                     <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/90 border border-amber-200/90 shadow-sm shadow-amber-100 text-xs font-semibold text-slate-800 mb-8 backdrop-blur-sm animate-fade-in">
@@ -96,7 +108,7 @@ export default function Welcome({ auth }: PageProps) {
 
                 {/* Main Headline */}
                 <div className="text-center max-w-4xl mx-auto space-y-6">
-                    <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold text-slate-950 tracking-tight leading-[1.12]">
+                    <h1 className="text-3xl sm:text-5xl lg:text-7xl font-extrabold text-slate-950 tracking-tight leading-[1.15] break-words">
                         Penyimpanan Cloud Mandiri Berkecepatan Tinggi dengan{' '}
                         <span className="relative inline-block">
                             <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#CC6F00] via-[#F2A900] to-[#CC6F00]">
@@ -544,7 +556,7 @@ export default function Welcome({ auth }: PageProps) {
 
             {/* Footer */}
             <footer className="relative border-t border-slate-100 py-8 bg-slate-50/50">
-                <div className="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 font-medium">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 font-medium">
                     <div className="flex items-center gap-2">
                         <ApplicationLogo />
                     </div>
