@@ -29,8 +29,9 @@ class SecurityHardeningTest extends TestCase
         $response->assertHeader('Permissions-Policy');
     }
 
-    public function test_dangerous_executable_file_uploads_are_blocked(): void
+    public function test_dangerous_executable_file_uploads_can_be_blocked_when_configured(): void
     {
+        config(['cloudvault.allow_all_file_types' => false]);
         Storage::fake('local');
         $user = User::factory()->create();
 
@@ -50,6 +51,31 @@ class SecurityHardeningTest extends TestCase
         }
 
         $this->assertDatabaseCount('file_entries', 0);
+    }
+
+    public function test_all_file_types_can_be_uploaded_by_default(): void
+    {
+        config(['cloudvault.allow_all_file_types' => true]);
+        Storage::fake('local');
+        $user = User::factory()->create();
+
+        $variousFiles = [
+            UploadedFile::fake()->create('installer.exe', 50, 'application/x-msdownload'),
+            UploadedFile::fake()->create('script.sh', 5, 'application/x-sh'),
+            UploadedFile::fake()->create('index.php', 10, 'application/x-php'),
+            UploadedFile::fake()->create('backup.zip', 100, 'application/zip'),
+            UploadedFile::fake()->create('program.bin', 30, 'application/octet-stream'),
+        ];
+
+        $response = $this->actingAs($user)->post(route('files.upload'), [
+            'files' => $variousFiles,
+        ]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseCount('file_entries', 5);
+        $this->assertDatabaseHas('file_entries', ['name' => 'installer.exe']);
+        $this->assertDatabaseHas('file_entries', ['name' => 'script.sh']);
+        $this->assertDatabaseHas('file_entries', ['name' => 'index.php']);
     }
 
     public function test_filename_sanitization_prevents_path_traversal(): void

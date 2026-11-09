@@ -6,7 +6,6 @@ use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
@@ -19,6 +18,9 @@ class AdminUserController extends Controller
      */
     public function index(): Response
     {
+        // Automatically purge any users whose 3-day grace period has elapsed
+        User::purgeExpiredScheduledDeletions();
+
         $users = User::withCount(['files', 'folders'])
             ->latest()
             ->get()
@@ -40,6 +42,10 @@ class AdminUserController extends Controller
                     'files_count' => $user->files_count,
                     'folders_count' => $user->folders_count,
                     'created_at' => $user->created_at?->format('d M Y, H:i'),
+                    'is_scheduled_for_deletion' => $user->isScheduledForDeletion(),
+                    'scheduled_deletion_at' => $user->scheduled_deletion_at?->toIso8601String(),
+                    'scheduled_deletion_formatted' => $user->scheduled_deletion_at?->format('d M Y, H:i'),
+                    'scheduled_deletion_diff' => $user->scheduled_deletion_at ? $user->scheduled_deletion_at->diffForHumans() : null,
                 ];
             });
 
@@ -106,7 +112,7 @@ class AdminUserController extends Controller
     }
 
     /**
-     * Delete a user and all their stored files.
+     * Schedule a user for deletion with a 3-day grace period.
      */
     public function destroy(Request $request, User $user): RedirectResponse
     {
@@ -114,15 +120,39 @@ class AdminUserController extends Controller
             return back()->with('error', 'Anda tidak dapat menghapus akun Anda sendiri.');
         }
 
-        // Delete all physical files belonging to this user
-        foreach ($user->files as $file) {
-            Storage::disk('local')->delete($file->path);
+        $user->scheduleDeletion(3);
+        $scheduledDate = $user->scheduled_deletion_at?->format('d M Y, H:i');
+
+        return back()->with('success', "Akun '{$user->name}' telah dijadwalkan untuk dihapus dalam 3 hari (pada {$scheduledDate}). Anda dapat membatalkannya kapan saja selama masa tenggang.");
+    }
+
+    /**
+     * Cancel the scheduled deletion of a user.
+     */
+    public function cancelDeletion(Request $request, User $user): RedirectResponse
+    {
+        if (! $user->isScheduledForDeletion()) {
+            return back()->with('error', "Akun '{$user->name}' tidak sedang dalam jadwal penghapusan.");
+        }
+
+        $user->cancelDeletion();
+
+        return back()->with('success', "Penghapusan akun '{$user->name}' berhasil dibatalkan. Akun kembali aktif sepenuhnya.");
+    }
+
+    /**
+     * Immediately and permanently delete a user and all their files without waiting.
+     */
+    public function forceDestroy(Request $request, User $user): RedirectResponse
+    {
+        if ($user->id === $request->user()->id) {
+            return back()->with('error', 'Anda tidak dapat menghapus akun Anda sendiri.');
         }
 
         $userName = $user->name;
-        $user->delete();
+        $user->purgeUserAndFiles();
 
-        return back()->with('success', 'Pengguna "'.$userName.'" dan seluruh berkasnya berhasil dihapus.');
+        return back()->with('success', "Akun '{$userName}' dan seluruh berkas fisiknya berhasil dihapus secara permanen.");
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Models\User;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -47,6 +48,17 @@ class LoginRequest extends FormRequest
 
             throw ValidationException::withMessages([
                 'email' => trans('auth.failed'),
+            ]);
+        }
+
+        /** @var User|null $user */
+        $user = Auth::user();
+        if ($user && $user->isScheduledForDeletion()) {
+            Auth::logout();
+            $deletionDate = $user->scheduled_deletion_at?->format('d M Y, H:i');
+
+            throw ValidationException::withMessages([
+                'email' => "Akun Anda sedang dalam masa tenggang penonaktifan dan dijadwalkan untuk dihapus permanen pada {$deletionDate}. Silakan hubungi Administrator untuk membatalkan penghapusan akun.",
             ]);
         }
 

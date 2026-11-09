@@ -27,9 +27,14 @@ class FileEntry extends Model
 
     /**
      * Check if a file extension is blocked for security reasons.
+     * When allow_all_file_types is true (default), all file types can be uploaded.
      */
     public static function isDangerousExtension(string $extension): bool
     {
+        if (config('cloudvault.allow_all_file_types', true)) {
+            return false;
+        }
+
         return in_array(strtolower(trim($extension)), self::BLOCKED_EXTENSIONS, true);
     }
 

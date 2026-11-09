@@ -136,6 +136,7 @@ class InboundIntegrationTest extends TestCase
 
     public function test_inbound_blocks_dangerous_extensions(): void
     {
+        config(['cloudvault.allow_all_file_types' => false]);
         $user = User::factory()->create();
         $token = $user->ensureWebhookToken();
         $fakePhp = UploadedFile::fake()->create('backdoor.php', 100);

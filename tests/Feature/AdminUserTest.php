@@ -84,7 +84,7 @@ class AdminUserTest extends TestCase
         ]);
     }
 
-    public function test_admin_can_delete_user_and_their_files(): void
+    public function test_admin_schedules_user_deletion_with_three_day_grace_period(): void
     {
         Storage::fake('local');
         $admin = User::factory()->create(['is_admin' => true]);
@@ -93,7 +93,7 @@ class AdminUserTest extends TestCase
         $path = "files/{$user->id}/testfile.txt";
         Storage::disk('local')->put($path, 'Konten test');
 
-        $file = FileEntry::factory()->create([
+        FileEntry::factory()->create([
             'user_id' => $user->id,
             'path' => $path,
         ]);
@@ -103,8 +103,94 @@ class AdminUserTest extends TestCase
         $response = $this->actingAs($admin)->delete("/admin/users/{$user->id}");
 
         $response->assertRedirect();
+
+        // User and physical files should still exist during the 3-day grace period
+        $user->refresh();
+        $this->assertNotNull($user->scheduled_deletion_at);
+        $this->assertTrue($user->scheduled_deletion_at->isFuture());
+        $this->assertDatabaseHas('users', ['id' => $user->id]);
+        Storage::disk('local')->assertExists($path);
+    }
+
+    public function test_admin_can_cancel_scheduled_deletion(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $user = User::factory()->create([
+            'is_admin' => false,
+            'scheduled_deletion_at' => now()->addDays(2),
+        ]);
+
+        $response = $this->actingAs($admin)->post("/admin/users/{$user->id}/cancel-deletion");
+
+        $response->assertRedirect();
+        $user->refresh();
+        $this->assertNull($user->scheduled_deletion_at);
+        $this->assertFalse($user->isScheduledForDeletion());
+    }
+
+    public function test_user_scheduled_for_deletion_cannot_log_in(): void
+    {
+        $user = User::factory()->create([
+            'email' => 'terhapus@cloudvault.com',
+            'password' => bcrypt('password123'),
+            'scheduled_deletion_at' => now()->addDays(2),
+        ]);
+
+        $response = $this->post('/login', [
+            'email' => 'terhapus@cloudvault.com',
+            'password' => 'password123',
+        ]);
+
+        $response->assertSessionHasErrors('email');
+        $this->assertGuest();
+    }
+
+    public function test_admin_can_force_delete_user_and_their_files_immediately(): void
+    {
+        Storage::fake('local');
+        $admin = User::factory()->create(['is_admin' => true]);
+        $user = User::factory()->create(['is_admin' => false]);
+
+        $path = "files/{$user->id}/testfile.txt";
+        Storage::disk('local')->put($path, 'Konten test');
+
+        FileEntry::factory()->create([
+            'user_id' => $user->id,
+            'path' => $path,
+        ]);
+
+        Storage::disk('local')->assertExists($path);
+
+        $response = $this->actingAs($admin)->delete("/admin/users/{$user->id}/force");
+
+        $response->assertRedirect();
         $this->assertDatabaseMissing('users', ['id' => $user->id]);
         Storage::disk('local')->assertMissing($path);
+    }
+
+    public function test_purge_command_deletes_expired_scheduled_users(): void
+    {
+        Storage::fake('local');
+        $expiredUser = User::factory()->create([
+            'scheduled_deletion_at' => now()->subDay(),
+        ]);
+        $activeUser = User::factory()->create([
+            'scheduled_deletion_at' => now()->addDays(2),
+        ]);
+
+        $filePath = "files/{$expiredUser->id}/expired.txt";
+        Storage::disk('local')->put($filePath, 'Expired user content');
+        FileEntry::factory()->create([
+            'user_id' => $expiredUser->id,
+            'path' => $filePath,
+        ]);
+
+        $this->artisan('users:purge-deleted')->assertSuccessful();
+
+        $this->assertDatabaseMissing('users', ['id' => $expiredUser->id]);
+        Storage::disk('local')->assertMissing($filePath);
+
+        $this->assertDatabaseHas('users', ['id' => $activeUser->id]);
     }
 
     public function test_admin_cannot_delete_themselves(): void

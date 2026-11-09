@@ -102,6 +102,8 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
     Route::post('/users', [AdminUserController::class, 'store'])->name('users.store');
     Route::patch('/users/{user}', [AdminUserController::class, 'update'])->name('users.update');
     Route::delete('/users/{user}', [AdminUserController::class, 'destroy'])->name('users.destroy');
+    Route::post('/users/{user}/cancel-deletion', [AdminUserController::class, 'cancelDeletion'])->name('users.cancel-deletion');
+    Route::delete('/users/{user}/force', [AdminUserController::class, 'forceDestroy'])->name('users.force-destroy');
 });
 
 // Public Share Routes

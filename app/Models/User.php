@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class User extends Authenticatable
@@ -38,6 +39,7 @@ class User extends Authenticatable
         'password',
         'storage_limit',
         'is_admin',
+        'scheduled_deletion_at',
         'webhook_token',
     ];
 
@@ -63,7 +65,66 @@ class User extends Authenticatable
             'password' => 'hashed',
             'storage_limit' => 'integer',
             'is_admin' => 'boolean',
+            'scheduled_deletion_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Determine if the user is scheduled for deletion.
+     */
+    public function isScheduledForDeletion(): bool
+    {
+        return $this->scheduled_deletion_at !== null;
+    }
+
+    /**
+     * Schedule this user for deletion with a grace period (defaults to 3 days).
+     */
+    public function scheduleDeletion(int $days = 3): void
+    {
+        $this->update([
+            'scheduled_deletion_at' => now()->addDays($days),
+        ]);
+    }
+
+    /**
+     * Cancel the scheduled deletion and restore the user to active status.
+     */
+    public function cancelDeletion(): void
+    {
+        $this->update([
+            'scheduled_deletion_at' => null,
+        ]);
+    }
+
+    /**
+     * Permanently delete this user and all their physical files.
+     */
+    public function purgeUserAndFiles(): void
+    {
+        foreach ($this->files as $file) {
+            Storage::disk('local')->delete($file->path);
+        }
+
+        $this->delete();
+    }
+
+    /**
+     * Purge all users whose scheduled deletion grace period has elapsed.
+     */
+    public static function purgeExpiredScheduledDeletions(): int
+    {
+        $expiredUsers = static::whereNotNull('scheduled_deletion_at')
+            ->where('scheduled_deletion_at', '<=', now())
+            ->get();
+
+        $count = 0;
+        foreach ($expiredUsers as $user) {
+            $user->purgeUserAndFiles();
+            $count++;
+        }
+
+        return $count;
     }
 
     /**

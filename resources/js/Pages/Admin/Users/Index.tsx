@@ -9,7 +9,9 @@ import {
     X,
     CheckCircle,
     AlertCircle,
-    AlertTriangle
+    AlertTriangle,
+    Clock,
+    RotateCcw
 } from 'lucide-react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { PageProps } from '@/types';
@@ -28,6 +30,10 @@ interface ManagedUser {
     files_count: number;
     folders_count: number;
     created_at: string;
+    is_scheduled_for_deletion?: boolean;
+    scheduled_deletion_at?: string | null;
+    scheduled_deletion_formatted?: string | null;
+    scheduled_deletion_diff?: string | null;
 }
 
 interface AdminUsersProps extends PageProps {
@@ -38,6 +44,13 @@ export default function AdminUsers({ auth, users, flash }: AdminUsersProps) {
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
     const [deleteModal, setDeleteModal] = useState<{
+        isOpen: boolean;
+        user: ManagedUser | null;
+    }>({
+        isOpen: false,
+        user: null,
+    });
+    const [forceDeleteModal, setForceDeleteModal] = useState<{
         isOpen: boolean;
         user: ManagedUser | null;
     }>({
@@ -99,6 +112,17 @@ export default function AdminUsers({ auth, users, flash }: AdminUsersProps) {
         router.delete(route('admin.users.destroy', deleteModal.user.id), {
             onSuccess: () => setDeleteModal({ isOpen: false, user: null }),
         });
+    };
+
+    const handleForceDeleteConfirm = () => {
+        if (!forceDeleteModal.user) return;
+        router.delete(route('admin.users.force-destroy', forceDeleteModal.user.id), {
+            onSuccess: () => setForceDeleteModal({ isOpen: false, user: null }),
+        });
+    };
+
+    const handleCancelDeletion = (user: ManagedUser) => {
+        router.post(route('admin.users.cancel-deletion', user.id));
     };
 
     return (
@@ -164,15 +188,22 @@ export default function AdminUsers({ auth, users, flash }: AdminUsersProps) {
                                 const isCurrentUser = u.id === auth.user.id;
 
                                 return (
-                                    <tr key={u.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition-colors">
+                                    <tr
+                                        key={u.id}
+                                        className={
+                                            u.is_scheduled_for_deletion
+                                                ? 'bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-50/80 dark:hover:bg-amber-950/30 transition-colors'
+                                                : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition-colors'
+                                        }
+                                    >
                                         <td className="py-4 px-6">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#F2A900] to-[#CC6F00] text-slate-900 font-bold flex items-center justify-center shrink-0 shadow-xs text-sm">
+                                                <div className={`w-10 h-10 rounded-2xl ${u.is_scheduled_for_deletion ? 'bg-gradient-to-br from-amber-400 to-rose-500 text-white' : 'bg-gradient-to-br from-[#F2A900] to-[#CC6F00] text-slate-900'} font-bold flex items-center justify-center shrink-0 shadow-xs text-sm`}>
                                                     {u.name.charAt(0).toUpperCase()}
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="font-semibold text-sm text-slate-800 dark:text-slate-100">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <span className={`font-semibold text-sm ${u.is_scheduled_for_deletion ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-100'}`}>
                                                             {u.name}
                                                         </span>
                                                         {isCurrentUser && (
@@ -180,23 +211,43 @@ export default function AdminUsers({ auth, users, flash }: AdminUsersProps) {
                                                                 Anda
                                                             </span>
                                                         )}
+                                                        {u.is_scheduled_for_deletion && (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300 border border-rose-300/60 dark:border-rose-900">
+                                                                <Clock className="w-3 h-3 text-rose-500" />
+                                                                Tenggang 3 Hari
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{u.email}</p>
+                                                    {u.is_scheduled_for_deletion && (
+                                                        <p className="text-[11px] font-medium text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1">
+                                                            <span>Dihapus permanen: <strong>{u.scheduled_deletion_diff || 'dalam 3 hari'}</strong> ({u.scheduled_deletion_formatted})</span>
+                                                        </p>
+                                                    )}
                                                 </div>
                                             </div>
                                         </td>
 
                                         <td className="py-4 px-6">
-                                            {u.is_admin ? (
-                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#FEF9EC] dark:bg-amber-950/40 text-[#9A5B00] dark:text-amber-300 border border-[#F2A900]/30">
-                                                    <Shield className="w-3.5 h-3.5 text-[#CC6F00]" />
-                                                    <span>Admin</span>
-                                                </span>
-                                            ) : (
-                                                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-700">
-                                                    Pengguna
-                                                </span>
-                                            )}
+                                            <div className="space-y-1">
+                                                {u.is_admin ? (
+                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#FEF9EC] dark:bg-amber-950/40 text-[#9A5B00] dark:text-amber-300 border border-[#F2A900]/30">
+                                                        <Shield className="w-3.5 h-3.5 text-[#CC6F00]" />
+                                                        <span>Admin</span>
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-700">
+                                                        Pengguna
+                                                    </span>
+                                                )}
+                                                {u.is_scheduled_for_deletion && (
+                                                    <div>
+                                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/70 dark:border-amber-900/60">
+                                                            Nonaktif
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </td>
 
                                         <td className="py-4 px-6">
@@ -227,25 +278,46 @@ export default function AdminUsers({ auth, users, flash }: AdminUsersProps) {
                                         </td>
 
                                         <td className="py-4 px-6 text-right">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <button
-                                                    onClick={() => handleOpenEdit(u)}
-                                                    className="p-1.5 rounded-xl text-slate-400 hover:text-[#CC6F00] hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                                                    title="Edit Pengguna"
-                                                >
-                                                    <Edit3 className="w-4 h-4" />
-                                                </button>
-
-                                                {!isCurrentUser && (
+                                            {u.is_scheduled_for_deletion ? (
+                                                <div className="flex items-center justify-end gap-1.5">
                                                     <button
-                                                        onClick={() => setDeleteModal({ isOpen: true, user: u })}
+                                                        onClick={() => handleCancelDeletion(u)}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-300 dark:border-emerald-800 transition-all shadow-2xs"
+                                                        title="Batalkan Jadwal Penghapusan (Aktifkan Kembali Akun)"
+                                                    >
+                                                        <RotateCcw className="w-3.5 h-3.5" />
+                                                        <span>Batalkan</span>
+                                                    </button>
+
+                                                    <button
+                                                        onClick={() => setForceDeleteModal({ isOpen: true, user: u })}
                                                         className="p-1.5 rounded-xl text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
-                                                        title="Hapus Pengguna"
+                                                        title="Hapus Permanen Sekarang"
                                                     >
                                                         <Trash2 className="w-4 h-4" />
                                                     </button>
-                                                )}
-                                            </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button
+                                                        onClick={() => handleOpenEdit(u)}
+                                                        className="p-1.5 rounded-xl text-slate-400 hover:text-[#CC6F00] hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                                        title="Edit Pengguna"
+                                                    >
+                                                        <Edit3 className="w-4 h-4" />
+                                                    </button>
+
+                                                    {!isCurrentUser && (
+                                                        <button
+                                                            onClick={() => setDeleteModal({ isOpen: true, user: u })}
+                                                            className="p-1.5 rounded-xl text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                                                            title="Hapus Pengguna (Tenggang 3 Hari)"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
                                         </td>
                                     </tr>
                                 );
@@ -495,39 +567,101 @@ export default function AdminUsers({ auth, users, flash }: AdminUsersProps) {
                 </div>
             )}
 
-            {/* DELETE USER MODAL */}
+            {/* SCHEDULE DELETE USER MODAL (3-DAY GRACE PERIOD) */}
             {deleteModal.isOpen && deleteModal.user && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in font-poppins">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200/80 dark:border-slate-800">
+                        <div className="flex items-center gap-3 text-amber-600 dark:text-amber-400 font-bold text-lg pb-3">
+                            <div className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-[#CC6F00] dark:text-amber-400 border border-amber-200 dark:border-amber-900/60">
+                                <Clock className="w-6 h-6" />
+                            </div>
+                            <span>Jadwalkan Penghapusan Akun</span>
+                        </div>
+
+                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 mb-4 leading-relaxed">
+                            Apakah Anda ingin menghapus akun <strong>{deleteModal.user.name}</strong> ({deleteModal.user.email})?
+                        </p>
+
+                        <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/60 text-xs text-amber-900 dark:text-amber-200 space-y-1.5 mb-6">
+                            <div className="flex items-center gap-2 font-bold text-[#CC6F00] dark:text-amber-400">
+                                <Clock className="w-4 h-4 shrink-0" />
+                                <span>Masa Tenggang 3 Hari Diterapkan</span>
+                            </div>
+                            <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                                Akun ini akan dinonaktifkan sementara dan dijadwalkan untuk dihapus secara permanen dalam <strong>3 hari</strong>. Seluruh <strong>{deleteModal.user.files_count} berkas</strong> dan <strong>{deleteModal.user.folders_count} folder</strong> tetap aman tersimpan selama masa tenggang. Anda dapat membatalkan penghapusan ini kapan saja jika berubah pikiran.
+                            </p>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const targetUser = deleteModal.user;
+                                    setDeleteModal({ isOpen: false, user: null });
+                                    if (targetUser) {
+                                        setForceDeleteModal({ isOpen: true, user: targetUser });
+                                    }
+                                }}
+                                className="text-[11px] font-semibold text-red-500 hover:text-red-700 underline underline-offset-2"
+                            >
+                                Hapus Permanen Sekarang
+                            </button>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setDeleteModal({ isOpen: false, user: null })}
+                                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleDeleteConfirm}
+                                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-slate-900 bg-[#F2A900] hover:bg-[#CC6F00] hover:text-white transition-colors shadow-sm"
+                                >
+                                    Jadwalkan Hapus (3 Hari)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* FORCE DELETE USER MODAL (IMMEDIATE) */}
+            {forceDeleteModal.isOpen && forceDeleteModal.user && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in font-poppins">
                     <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md p-6 shadow-2xl border border-slate-200/80 dark:border-slate-800">
                         <div className="flex items-center gap-3 text-red-600 dark:text-red-400 font-bold text-lg pb-3">
                             <div className="p-2.5 rounded-xl bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400">
                                 <AlertTriangle className="w-6 h-6" />
                             </div>
-                            <span>Hapus Akun Pengguna?</span>
+                            <span>Hapus Permanen Seketika?</span>
                         </div>
 
-                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 mb-6 leading-relaxed">
-                            Apakah Anda yakin ingin menghapus akun <strong>{deleteModal.user.name}</strong> ({deleteModal.user.email})?
-                            <br />
-                            <span className="text-red-600 font-semibold text-xs mt-2 block">
-                                Peringatan: Seluruh {deleteModal.user.files_count} berkas dan {deleteModal.user.folders_count} folder milik pengguna ini di server akan dihapus permanen!
-                            </span>
+                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 mb-4 leading-relaxed">
+                            Apakah Anda yakin ingin memusnahkan akun <strong>{forceDeleteModal.user.name}</strong> ({forceDeleteModal.user.email}) secara seketika tanpa menunggu masa tenggang 3 hari?
                         </p>
+
+                        <div className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-xs text-red-800 dark:text-red-300 mb-6 leading-relaxed">
+                            <span className="font-bold block mb-1">Peringatan Kritis:</span>
+                            Seluruh <strong>{forceDeleteModal.user.files_count} berkas</strong> dan <strong>{forceDeleteModal.user.folders_count} folder</strong> fisik milik pengguna ini di server akan dihapus secara permanen dan tidak dapat dipulihkan kembali!
+                        </div>
 
                         <div className="flex items-center justify-end gap-3">
                             <button
                                 type="button"
-                                onClick={() => setDeleteModal({ isOpen: false, user: null })}
+                                onClick={() => setForceDeleteModal({ isOpen: false, user: null })}
                                 className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                             >
                                 Batal
                             </button>
                             <button
                                 type="button"
-                                onClick={handleDeleteConfirm}
+                                onClick={handleForceDeleteConfirm}
                                 className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 transition-colors shadow-sm"
                             >
-                                Hapus Pengguna
+                                Hapus Permanen Sekarang
                             </button>
                         </div>
                     </div>
